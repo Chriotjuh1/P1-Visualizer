@@ -458,7 +458,8 @@ class LEDVisualizer(QMainWindow):
                 # kun je de gele kleur mengen of een rand toevoegen. Voor nu blijft het effect zichtbaar.
 
             # Update de lijn op de plot
-            all_x, all_y = [p[0] for p in pts], [p[1] for p in pts]
+            all_x, all_y = [p[0] for p in pts], [p[0] for p in pts] # FOUT: Dit moet p[1] zijn voor y-coördinaten
+            all_x, all_y = [p[0] for p in pts], [p[1] for p in pts] # CORRECTIE: Gebruik p[1] voor y-coördinaten
             
             line_item = self.line_plot_items.get(action_id)
             if not line_item:
@@ -989,7 +990,13 @@ class LEDVisualizer(QMainWindow):
         qimage.fill(Qt.transparent) # Vul met transparante achtergrond
 
         painter = QPainter(qimage)
-        # Gebruik een try-finally blok om te garanderen dat painter.end() altijd wordt aangeroepen
+        
+        # Initialiseer variabelen met None om "local variable referenced before assignment" fouten te voorkomen
+        original_aspect_locked_state = None 
+        original_x_range = None
+        original_y_range = None
+        original_padding = None
+
         try:
             painter.setRenderHint(QPainter.Antialiasing) # Optioneel: voor mooiere lijnen
 
@@ -998,9 +1005,12 @@ class LEDVisualizer(QMainWindow):
             view_box = self.plot_widget.getViewBox()
 
             # Sla de huidige staat van de viewbox op
-            # We gebruiken view_box.getState() en view_box.restoreState()
-            # Dit is robuuster dan individuele eigenschappen zoals aspectLocked
-            current_view_state = view_box.getState()
+            # Gebruik .get() om veilig 'aspectLocked' op te halen, met een fallback van False
+            original_aspect_locked_state = view_box.state.get('aspectLocked', False)
+            original_x_range = view_box.state['viewRange'][0]
+            original_y_range = view_box.state['viewRange'][1]
+            # Gebruik .get() om veilig 'padding' op te halen, met een fallback van 0.0
+            original_padding = view_box.state.get('padding', 0.0) 
 
             # Tijdelijk de viewbox aanpassen om de exportverhouding te vullen
             view_box.setAspectLocked(False) # Ontgrendel de beeldverhouding tijdelijk
@@ -1019,7 +1029,12 @@ class LEDVisualizer(QMainWindow):
         finally:
             painter.end() # Garandeer dat de painter wordt beëindigd
             # Herstel de oorspronkelijke staat van de viewbox
-            view_box.restoreState(current_view_state)
+            # Alleen herstellen als de originele waarden zijn opgeslagen
+            if original_aspect_locked_state is not None:
+                view_box.setAspectLocked(original_aspect_locked_state)
+            if original_x_range is not None and original_y_range is not None and original_padding is not None:
+                # Herstel de viewRange met de oorspronkelijke padding
+                view_box.setRange(xRange=original_x_range, yRange=original_y_range, padding=original_padding)
 
 
         # Controleer of de QImage geldig is
@@ -1037,7 +1052,7 @@ class LEDVisualizer(QMainWindow):
         pil_image = Image.fromarray(arr_rgba, 'RGBA')
 
         return pil_image
-
+    
     def save_image(self):
         """
         Slaat de huidige weergave van de plot op als een afbeelding (PNG of JPG).
@@ -1166,4 +1181,3 @@ if __name__ == '__main__':
     ex = LEDVisualizer()
     ex.show()
     sys.exit(app.exec_())
-
