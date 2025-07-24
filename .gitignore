@@ -1,0 +1,14 @@
+# Bestanden gegenereerd door PyInstaller/builds
+build/
+dist/
+*.spec
+*.pyz
+
+# Python virtuele omgevingen
+venv/
+.venv/
+env/
+.env/
+
+# Specifiek voor cv2.abi3.so binnen venv
+venv/lib/python3.12/site-packages/cv2/
