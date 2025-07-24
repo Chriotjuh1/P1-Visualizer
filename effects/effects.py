@@ -4,7 +4,7 @@
 from .schemas import EffectModel, StaticParams, BreathingParams, KnightRiderParams, MeteorParams, MulticolorParams, RunningLineParams, ChristmasSnowParams, FlagParams
 
 # Importeer de basisklasse Effects vanuit base_effect.py
-from .base_effect import Effects
+from .base_effect import Effectscle
 
 # Importeer alle specifieke effectklassen direct, ervan uitgaande dat ze in dezelfde map staan
 from .static import StaticEffect
