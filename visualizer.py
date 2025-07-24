@@ -36,12 +36,23 @@ pg.setConfigOptions(useOpenGL=False)
 # --- Probeer de echte utility en effect bestanden te importeren ---
 try:
     # BELANGRIJKE OPMERKING: Zorg ervoor dat de 'effects' map een geldige Python package is
-    # (d.w.z. dat er een leeg of initieel '__init__.py' bestand in zit).
+    # (d.w.w.z. dat er een leeg of initieel '__init__.py' bestand in zit).
     # Controleer ook of de methodenamen in je effectbestanden (bijv. effects/base_effect.py,
     # effects/static.py, effects/breathing.py) allemaal 'get_next_frame' (snake_case) gebruiken
     # in plaats van 'getNextFrame' (camelCase). Dit is cruciaal voor de functionaliteit.
-    from effects.schemas import EffectModel, StaticParams, BreathingParams, Color, KnightRiderParams, MeteorParams, MulticolorParams, RunningLineParams, ChristmasSnowParams, FlagParams
+    from effects.schemas import (
+        EffectModel, StaticParams, BreathingParams, Color,
+        KnightRiderParams, MeteorParams, MulticolorParams,
+        RunningLineParams, ChristmasSnowParams, FlagParams
+    )
     from effects.effects import get_effect_class
+    from effects.breathing import BreathingEffect
+    from effects.knight_rider import KnightRiderEffect
+    from effects.meteor import MeteorEffect
+    from effects.multicolor import MulticolorEffect
+    from effects.running_line import RunningLineEffect
+    from effects.christmas_snow import ChristmasSnowEffect
+    from effects.flag import FlagEffect
     from utils import distance, resample_points, smooth_points, point_line_distance
     from effects.converts import rgb_to_rgbw
     print("INFO: Echte 'utils' en 'effects' modules geladen.")
@@ -68,6 +79,19 @@ except ImportError as e:
         def __init__(self, color, brightness): self.color, self.brightness = color, brightness
     class BreathingParams:
         def __init__(self, color, brightness): self.color, self.brightness = color, brightness
+    class KnightRiderParams:
+        def __init__(self, color, brightness, line_length): self.color, self.brightness, self.line_length = color, brightness, line_length
+    class MeteorParams:
+        def __init__(self, color, brightness, meteor_width, spark_intensity): self.color, self.brightness, self.meteor_width, self.spark_intensity = color, brightness, meteor_width, spark_intensity
+    class MulticolorParams:
+        def __init__(self, brightness): self.brightness = brightness
+    class RunningLineParams:
+        def __init__(self, color, brightness, line_width, background_color, number_of_lines): self.color, self.brightness, self.line_width, self.background_color, self.number_of_lines = color, brightness, line_width, background_color, number_of_lines
+    class ChristmasSnowParams:
+        def __init__(self, brightness, red_chance, dark_green_chance): self.brightness, self.red_chance, self.dark_green_chance = brightness, red_chance, dark_green_chance
+    class FlagParams:
+        def __init__(self, color, brightness, width, background_color): self.color, self.brightness, self.width, self.background_color = color, brightness, width, background_color
+
     class EffectModel:
         def __init__(self, params, frame_skip, fps, num_leds): self.params, self.frame_skip, self.fps, self.num_leds = params, frame_skip, fps, num_leds
     class Effects:
@@ -81,7 +105,8 @@ except ImportError as e:
             r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
             brightness_factor = self.params.brightness / 100.0
             return [(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor), 0)] * self.num_leds
-    class BreathingEffect(Effects):
+    
+    class DummyBreathingEffect(Effects):
         def __init__(self, model):
             super().__init__(model)
             self.current_breathing_factor = 0.0
@@ -106,18 +131,141 @@ except ImportError as e:
             red, green, blue = int(r_breath * brightness), int(g_breath * brightness), int(b_breath * brightness)
             red, green, blue, white = rgb_to_rgbw(red, green, blue)
             return [[red, green, blue, white]] * self.num_leds
-    
-    # Dummy get_effect_class functie
-    _effect_classes = {"Static": DummyStaticEffect, "Pulseline": BreathingEffect}
-    def get_effect_class(effect_name): return _effect_classes.get(effect_name)
 
-    # Dummy parameters voor andere effecten (niet geïmplementeerd in dummy)
-    class KnightRiderParams: pass
-    class MeteorParams: pass
-    class MulticolorParams: pass
-    class RunningLineParams: pass
-    class ChristmasSnowParams: pass
-    class FlagParams: pass
+    class DummyKnightRiderEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.position = 0
+            self.moving_right = True
+        def get_next_frame(self):
+            frame = [[0, 0, 0, 0]] * self.num_leds
+            line_length = self.params.line_length
+            r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
+            brightness_factor = self.params.brightness / 100
+            
+            for i in range(line_length):
+                idx = (self.position + i) % self.num_leds
+                frame[idx] = rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))
+            
+            if self.moving_right:
+                self.position += 1
+                if self.position >= self.num_leds - line_length:
+                    self.moving_right = False
+            else:
+                self.position -= 1
+                if self.position <= 0:
+                    self.moving_right = True
+            return frame
+
+    class DummyMeteorEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.meteor_position = 0.0
+            self.sparks = []
+        def get_next_frame(self):
+            frame = [[0, 0, 0, 0]] * self.num_leds
+            # Simplified dummy logic for demonstration
+            self.meteor_position = (self.meteor_position + 1) % self.num_leds
+            r,g,b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
+            brightness_factor = self.params.brightness / 100
+            for i in range(self.params.meteor_width):
+                idx = (int(self.meteor_position) - i + self.num_leds) % self.num_leds
+                frame[idx] = rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))
+            return frame
+
+    class DummyMulticolorEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.initial_hsv_color = [0.0, 1.0, 1.0]
+        def get_next_frame(self):
+            import colorsys
+            brightness_factor = self.params.brightness / 100
+            red_hsv, green_hsv, blue_hsv = colorsys.hsv_to_rgb(*self.initial_hsv_color)
+            self.initial_hsv_color[0] = round(self.initial_hsv_color[0] + 0.01, 3) # Snellere rotatie voor dummy
+            if self.initial_hsv_color[0] > 1:
+                self.initial_hsv_color[0] = 0
+            red = int(red_hsv * 255 * brightness_factor)
+            green = int(green_hsv * 255 * brightness_factor)
+            blue = int(blue_hsv * 255 * brightness_factor)
+            return [rgb_to_rgbw(red, green, blue)] * self.num_leds
+
+    class DummyRunningLineEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.pos = 0
+        def get_next_frame(self):
+            frame = [[0, 0, 0, 0]] * self.num_leds
+            line_width = self.params.line_width
+            bg_r, bg_g, bg_b = self.params.background_color.red, self.params.background_color.green, self.params.background_color.blue
+            fg_r, fg_g, fg_b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
+            
+            bg_rgbw = rgb_to_rgbw(bg_r, bg_g, bg_b)
+            fg_rgbw = rgb_to_rgbw(fg_r, fg_g, fg_b)
+
+            for i in range(self.params.number_of_lines):
+                current_gap = (self.num_leds // self.params.number_of_lines) * i
+                for width in range(line_width):
+                    idx = (self.pos + current_gap + width) % self.num_leds
+                    frame[idx] = fg_rgbw
+            self.pos = (self.pos + 1) % self.num_leds
+            return frame
+
+    class DummyChristmasSnowEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.led_states = [[[0, 120, 0], 0]] * self.num_leds # Dark green background
+        def get_next_frame(self):
+            frame = []
+            for i in range(self.num_leds):
+                r,g,b = self.led_states[i][0]
+                if random.randint(0, 100) < self.params.red_chance: # Simple chance for red
+                    r = 255
+                elif random.randint(0, 100) < self.params.dark_green_chance: # Simple chance for green
+                    g = 180
+                # Simulate fading
+                r = max(0, r - 10)
+                g = max(0, g - 10)
+                b = max(0, b - 10)
+                self.led_states[i] = [[r,g,b], 0]
+                frame.append(rgb_to_rgbw(r,g,b))
+            return frame
+
+    class DummyFlagEffect(Effects):
+        def __init__(self, model):
+            super().__init__(model)
+            self.position = 0
+        def get_next_frame(self):
+            frame = [[0, 0, 0, 0]] * self.num_leds
+            brightness_factor = self.params.brightness / 100
+            
+            # Simplified flag logic for dummy
+            current_segment_start = self.position
+            for idx, color_input in enumerate(self.params.color):
+                flag_width = self.params.width[idx]
+                scaled_red = int(color_input.red * brightness_factor)
+                scaled_green = int(color_input.green * brightness_factor)
+                scaled_blue = int(color_input.blue * brightness_factor)
+                rgbw = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
+                
+                for led_offset in range(flag_width):
+                    index = (current_segment_start + led_offset) % self.num_leds
+                    frame[index] = rgbw
+                current_segment_start = (current_segment_start + flag_width) % self.num_leds
+            self.position = (self.position + 1) % self.num_leds
+            return frame
+
+    # Dummy get_effect_class functie
+    _effect_classes = {
+        "Static": DummyStaticEffect,
+        "Pulseline": DummyBreathingEffect, # Naam in UI is Pulseline, klasse is BreathingEffect
+        "Knight Rider": DummyKnightRiderEffect,
+        "Meteor": DummyMeteorEffect,
+        "Multicolor": DummyMulticolorEffect,
+        "Running Line": DummyRunningLineEffect,
+        "Christmas Snow": DummyChristmasSnowEffect,
+        "Flag": DummyFlagEffect
+    }
+    def get_effect_class(effect_name): return _effect_classes.get(effect_name)
 
 
 class LEDVisualizer(QMainWindow):
@@ -196,7 +344,11 @@ class LEDVisualizer(QMainWindow):
 
         # Schakel muisinteractie uit en vergrendel de beeldverhouding
         view_box.setMouseEnabled(x=False, y=False)
-        view_box.setAspectLocked(True)
+        # OPMERKING: setAspectLocked(True) behoudt de aspectverhouding van de afbeelding,
+        # wat kan leiden tot zwarte balken als de plotruimte een andere verhouding heeft.
+        # Om de afbeelding het hele plotgebied te laten vullen (met mogelijke vervorming),
+        # zet je dit op False.
+        view_box.setAspectLocked(False) # Aangepast naar False om de afbeelding te laten vullen
         
         # Verwijder alle interne marges om witte randen te voorkomen
         view_box.setContentsMargins(0, 0, 0, 0)
@@ -232,7 +384,23 @@ class LEDVisualizer(QMainWindow):
         control_layout.addWidget(QLabel("Effect:"))
         self.effect_combo = QComboBox()
         # Haal effectnamen op uit de get_effect_class functie
-        self.effect_names = list(get_effect_class.__globals__['_effect_classes'].keys()) if '_effect_classes' in get_effect_class.__globals__ else ["Static", "Pulseline"]
+        # De echte implementatie van get_effect_class wordt gebruikt als de import succesvol is.
+        # Anders wordt de dummy-implementatie gebruikt.
+        if '_effect_classes' in globals(): # Controleer of de dummy _effect_classes is gedefinieerd
+            self.effect_names = list(globals()['_effect_classes'].keys())
+        elif 'get_effect_class' in globals(): # Als de echte get_effect_class is geïmporteerd
+            # Dit is een placeholder; in een echte scenario zou get_effect_class een manier moeten bieden
+            # om alle beschikbare effectnamen op te halen, bijv. via een register.
+            # Voor nu, als de echte modules zijn geladen, kunnen we de namen handmatig toevoegen
+            # of aannemen dat get_effect_class een lijst van namen kan leveren.
+            # Voor deze context, hardcode de namen die we hebben geïmporteerd.
+            self.effect_names = [
+                "Static", "Pulseline", "Knight Rider", "Meteor",
+                "Multicolor", "Running Line", "Christmas Snow", "Flag"
+            ]
+        else: # Fallback als niets werkt (zou niet moeten gebeuren met try-except)
+            self.effect_names = ["Static", "Pulseline"] # Minimum set
+
         self.effect_combo.addItems(self.effect_names)
         self.effect_combo.currentIndexChanged.connect(self.change_effect)
         control_layout.addWidget(self.effect_combo)
@@ -257,6 +425,12 @@ class LEDVisualizer(QMainWindow):
         self.darkness_slider.valueChanged.connect(self.update_background_darkness)
         extra_options_layout.addWidget(self.darkness_slider)
 
+        # Container voor effect-specifieke parameters
+        self.effect_params_container = QWidget()
+        self.effect_params_layout = QVBoxLayout(self.effect_params_container)
+        extra_options_layout.addWidget(self.effect_params_container)
+        self.current_effect_ui_elements = {} # Stores {param_name: QWidget_instance}
+
         extra_options_layout.addWidget(QPushButton("Lijnen Samenvoegen", clicked=self.merge_lines))
         extra_options_layout.addWidget(QPushButton("Ongedaan Maken", clicked=self.undo_action))
         extra_options_layout.addWidget(QPushButton("Opnieuw Uitvoeren", clicked=self.redo_action))
@@ -277,6 +451,7 @@ class LEDVisualizer(QMainWindow):
         # Initialiseer de effect- en modusinstellingen
         self.change_effect()
         self.change_mode()
+        self.update_effect_parameters_ui() # Initialiseer de effect-specifieke UI
 
     def show_status_message(self, message):
         """
@@ -338,6 +513,8 @@ class LEDVisualizer(QMainWindow):
         # Deblokkeer signalen
         self.brightness_slider.blockSignals(False)
         self.speed_slider.blockSignals(False)
+        
+        self.update_effect_parameters_ui() # Update ook de effect-specifieke UI
         self.update_drawing() # Zorgt voor visuele update van selectie
 
     def timer_update(self):
@@ -384,7 +561,7 @@ class LEDVisualizer(QMainWindow):
             if len(pts) < 2:
                 # Verwijder het item als er geen punten zijn
                 if action_id in self.line_plot_items:
-                    self.plot_widget.removeItem(self.line_plot_items[action_id])
+                    self.plot_widget.removeItem(self.line_plot_items[action_id]) # Corrected: use self.line_plot_items[action_id]
                     del self.line_plot_items[action_id]
                 if action_id in self.point_plot_items:
                     self.plot_widget.removeItem(self.point_plot_items[action_id])
@@ -403,15 +580,92 @@ class LEDVisualizer(QMainWindow):
             # Bepaal de juiste ParamsModel voor het effect
             ParamsModel = StaticParams
             if effect_name == "Pulseline": ParamsModel = BreathingParams
-            # Voeg hier meer effecten toe als ze worden geïmplementeerd
-            # elif effect_name == "Knight Rider": ParamsModel = KnightRiderParams
+            elif effect_name == "Knight Rider": ParamsModel = KnightRiderParams
+            elif effect_name == "Meteor": ParamsModel = MeteorParams
+            elif effect_name == "Multicolor": ParamsModel = MulticolorParams
+            elif effect_name == "Running Line": ParamsModel = RunningLineParams
+            elif effect_name == "Christmas Snow": ParamsModel = ChristmasSnowParams
+            elif effect_name == "Flag": ParamsModel = FlagParams
+
 
             current_speed = action.get('speed', self.default_speed)
             current_brightness = action.get('brightness', self.default_brightness)
             
             r_base, g_base, b_base = action.get("color", self.led_color)
-            params_data = {"color": [Color(red=r_base, green=g_base, blue=b_base)], "brightness": int(current_brightness * 100)}
             
+            # Pas params_data aan op basis van het effecttype en de opgeslagen waarden
+            params_data = {}
+            if effect_name == "Static" or effect_name == "Pulseline":
+                params_data = {
+                    "color": [Color(red=r_base, green=g_base, blue=b_base)],
+                    "brightness": int(current_brightness * 100)
+                }
+            elif effect_name == "Knight Rider":
+                params_data = {
+                    "color": [Color(red=r_base, green=g_base, blue=b_base)],
+                    "brightness": int(current_brightness * 100),
+                    "line_length": action.get('line_length', 10) # Default 10
+                }
+            elif effect_name == "Meteor":
+                params_data = {
+                    "color": [Color(red=r_base, green=g_base, blue=b_base)],
+                    "brightness": int(current_brightness * 100),
+                    "meteor_width": action.get('meteor_width', 10), # Default 10
+                    "spark_intensity": action.get('spark_intensity', 50) # Default 50
+                }
+            elif effect_name == "Multicolor":
+                params_data = {
+                    "brightness": int(current_brightness * 100)
+                }
+            elif effect_name == "Running Line":
+                # Haal achtergrondkleur op, default naar zwart als niet ingesteld
+                bg_color_rgb = action.get('background_color', (0,0,0))
+                params_data = {
+                    "color": [Color(red=r_base, green=g_base, blue=b_base)],
+                    "brightness": int(current_brightness * 100),
+                    "line_width": action.get('line_width', 5), # Default 5
+                    "background_color": Color(*bg_color_rgb),
+                    "number_of_lines": action.get('number_of_lines', 3) # Default 3
+                }
+            elif effect_name == "Christmas Snow":
+                params_data = {
+                    "brightness": int(current_brightness * 100),
+                    "red_chance": action.get('red_chance', 30), # Default 30
+                    "dark_green_chance": action.get('dark_green_chance', 30) # Default 30
+                }
+            elif effect_name == "Flag":
+                # Standaard kleuren en breedtes voor de vlag
+                default_flag_colors = [Color(255,0,0), Color(255,255,255), Color(0,0,255)] # Rood, Wit, Blauw
+                default_flag_widths = [10, 10, 10]
+
+                flag_colors = []
+                flag_widths = []
+                for i in range(3): # Voor 3 strepen
+                    # Haal kleur op uit action, of gebruik default
+                    color_key = f'color_{i}'
+                    current_color_rgb = action.get(color_key, (default_flag_colors[i].red, default_flag_colors[i].green, default_flag_colors[i].blue))
+                    flag_colors.append(Color(*current_color_rgb))
+
+                    # Haal breedte op uit action, of gebruik default
+                    width_key = f'width_{i}'
+                    current_width = action.get(width_key, default_flag_widths[i])
+                    flag_widths.append(current_width)
+                
+                bg_color_rgb = action.get('background_color', (0,0,0)) # Default achtergrond zwart
+                
+                params_data = {
+                    "color": flag_colors,
+                    "brightness": int(current_brightness * 100),
+                    "width": flag_widths,
+                    "background_color": Color(*bg_color_rgb)
+                }
+            else: # Fallback voor onbekende effecten
+                params_data = {
+                    "color": [Color(red=r_base, green=g_base, blue=b_base)],
+                    "brightness": int(current_brightness * 100)
+                }
+
+
             # Bereken aantal LEDs en resampling interval
             total_line_length = sum(distance(pts[k], pts[k+1]) for k in range(len(pts) - 1))
             num_leds_for_this_line = max(2, int(total_line_length / 5)) if total_line_length > 0 else 2
@@ -458,8 +712,7 @@ class LEDVisualizer(QMainWindow):
                 # kun je de gele kleur mengen of een rand toevoegen. Voor nu blijft het effect zichtbaar.
 
             # Update de lijn op de plot
-            all_x, all_y = [p[0] for p in pts], [p[0] for p in pts] # FOUT: Dit moet p[1] zijn voor y-coördinaten
-            all_x, all_y = [p[0] for p in pts], [p[1] for p in pts] # CORRECTIE: Gebruik p[1] voor y-coördinaten
+            all_x, all_y = [p[0] for p in pts], [p[1] for p in pts] 
             
             line_item = self.line_plot_items.get(action_id)
             if not line_item:
@@ -494,6 +747,7 @@ class LEDVisualizer(QMainWindow):
         for action in self.actions:
             action['reset_effect_state'] = True # Forceer reset van effect instanties
         self.show_status_message(f"Effect gewijzigd naar: {self.effect_names[self.effect_index]}")
+        self.update_effect_parameters_ui() # Update de effect-specifieke UI bij effectwijziging
         self.update_drawing()
 
     def choose_led_color(self):
@@ -966,6 +1220,173 @@ class LEDVisualizer(QMainWindow):
         self.current_action = None # Reset de huidige actie
         self.update_drawing() # Zorg voor de laatste update
 
+    # --- Nieuwe hulpfuncties voor dynamische UI ---
+    def _add_slider(self, label_text, param_name, min_val, max_val, default_val):
+        """Voegt een slider toe aan de effect-parameters UI."""
+        label = QLabel(label_text)
+        slider = QSlider(Qt.Horizontal, minimum=min_val, maximum=max_val, value=default_val)
+        slider.valueChanged.connect(lambda val: self.set_effect_specific_param(param_name, val))
+        self.effect_params_layout.addWidget(label)
+        self.effect_params_layout.addWidget(slider)
+        self.current_effect_ui_elements[param_name] = slider
+        return slider
+
+    def _add_color_picker(self, label_text, param_name):
+        """Voegt een kleurkiezer knop toe aan de effect-parameters UI."""
+        label = QLabel(label_text)
+        button = QPushButton("Kies Kleur")
+        button.clicked.connect(lambda: self._choose_effect_color(param_name, button))
+        
+        # Initialiseer de knopkleur met de huidige globale LED kleur
+        initial_color = self.led_color
+        if self.selected_action_index != -1:
+            selected_action = self.actions[self.selected_action_index]
+            if param_name.startswith("color_"):
+                color_idx = int(param_name.split('_')[1])
+                if 'color' in selected_action and len(selected_action['color']) > color_idx and isinstance(selected_action['color'][color_idx], tuple):
+                    initial_color = selected_action['color'][color_idx]
+            elif param_name == "background_color" and 'background_color' in selected_action and isinstance(selected_action['background_color'], tuple):
+                initial_color = selected_action['background_color']
+        
+        button.setStyleSheet(f"background-color: rgb({initial_color[0]},{initial_color[1]},{initial_color[2]});")
+        
+        self.effect_params_layout.addWidget(label)
+        self.effect_params_layout.addWidget(button)
+        self.current_effect_ui_elements[param_name] = button
+        return button
+
+    def _choose_effect_color(self, param_name, button):
+        """Handelt het kiezen van een kleur voor een effect-specifieke parameter af."""
+        current_color_rgb = self.led_color # Standaard naar globale LED kleur
+        if self.selected_action_index != -1:
+            selected_action = self.actions[self.selected_action_index]
+            if param_name.startswith("color_"):
+                color_idx = int(param_name.split('_')[1])
+                if 'color' in selected_action and len(selected_action['color']) > color_idx and isinstance(selected_action['color'][color_idx], tuple):
+                    current_color_rgb = selected_action['color'][color_idx]
+            elif param_name == "background_color" and 'background_color' in selected_action and isinstance(selected_action['background_color'], tuple):
+                current_color_rgb = selected_action['background_color']
+
+        color = QColorDialog.getColor(QColor(*current_color_rgb))
+        if color.isValid():
+            new_rgb = (color.red(), color.green(), color.blue())
+            button.setStyleSheet(f"background-color: rgb({new_rgb[0]},{new_rgb[1]},{new_rgb[2]});")
+            self.set_effect_specific_param(param_name, new_rgb)
+
+    def set_effect_specific_param(self, param_name, value):
+        """
+        Stelt een effect-specifieke parameter in voor de geselecteerde lijn,
+        of voor alle lijnen als er geen lijn is geselecteerd.
+        """
+        if self.selected_action_index != -1:
+            action = self.actions[self.selected_action_index]
+            
+            if param_name.startswith("color_"):
+                color_idx = int(param_name.split('_')[1])
+                if 'color' not in action:
+                    action['color'] = []
+                # Zorg ervoor dat de lijst lang genoeg is
+                while len(action['color']) <= color_idx:
+                    action['color'].append(self.led_color) # Voeg standaardkleur toe indien ontbreekt
+                action['color'][color_idx] = value
+            elif param_name.startswith("width_"):
+                width_idx = int(param_name.split('_')[1])
+                if 'width' not in action:
+                    action['width'] = []
+                # Zorg ervoor dat de lijst lang genoeg is
+                while len(action['width']) <= width_idx:
+                    action['width'].append(10) # Standaard breedte
+                action['width'][width_idx] = value
+            else:
+                action[param_name] = value
+            
+            action['reset_effect_state'] = True
+            action['recalculate_resample'] = True # Sommige parameters kunnen resampling beïnvloeden
+            self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
+        else:
+            # Als er geen lijn is geselecteerd, pas de parameter globaal toe op alle lijnen
+            # Dit is een ontwerpkeuze; je kunt er ook voor kiezen om dit niet toe te staan
+            # of een waarschuwing te geven.
+            self.show_status_message("Selecteer een lijn om effect-specifieke parameters in te stellen.")
+            # Herstel UI als geen lijn is geselecteerd en gebruiker probeert globale specifieke parameters te wijzigen
+            # self.update_effect_parameters_ui() # Uncomment dit als je wilt dat de UI terugspringt
+
+        self.update_drawing()
+
+    def update_effect_parameters_ui(self):
+        """
+        Werkt de effect-specifieke parameters UI bij op basis van het geselecteerde effect
+        en de geselecteerde lijn.
+        """
+        # Wis alle bestaande widgets in de container
+        for i in reversed(range(self.effect_params_layout.count())):
+            widget_to_remove = self.effect_params_layout.itemAt(i).widget()
+            if widget_to_remove:
+                widget_to_remove.setParent(None)
+                widget_to_remove.deleteLater()
+        self.current_effect_ui_elements.clear()
+
+        selected_effect_name = self.effect_combo.currentText()
+        
+        # Haal de parameters van de geselecteerde lijn op, indien aanwezig
+        selected_action_params = {}
+        if self.selected_action_index != -1:
+            selected_action_params = self.actions[self.selected_action_index]
+
+        # Voeg UI-elementen toe op basis van het geselecteerde effect
+        if selected_effect_name == "Knight Rider":
+            default_val = selected_action_params.get('line_length', 10)
+            self._add_slider("Lijnlengte", "line_length", 1, 50, default_val)
+        
+        elif selected_effect_name == "Meteor":
+            default_meteor_width = selected_action_params.get('meteor_width', 10)
+            default_spark_intensity = selected_action_params.get('spark_intensity', 50)
+            self._add_slider("Meteoor Breedte", "meteor_width", 1, 50, default_meteor_width)
+            self._add_slider("Vonk Intensiteit", "spark_intensity", 0, 100, default_spark_intensity)
+        
+        elif selected_effect_name == "Running Line":
+            default_line_width = selected_action_params.get('line_width', 5)
+            default_num_lines = selected_action_params.get('number_of_lines', 3)
+            self._add_slider("Lijn Breedte", "line_width", 1, 20, default_line_width)
+            self._add_slider("Aantal Lijnen", "number_of_lines", 1, 10, default_num_lines)
+            self._add_color_picker("Achtergrond Kleur", "background_color")
+        
+        elif selected_effect_name == "Christmas Snow":
+            default_red_chance = selected_action_params.get('red_chance', 30)
+            default_dark_green_chance = selected_action_params.get('dark_green_chance', 30)
+            self._add_slider("Rode Kans (%)", "red_chance", 0, 100, default_red_chance)
+            self._add_slider("Donkergroene Kans (%)", "dark_green_chance", 0, 100, default_dark_green_chance)
+        
+        elif selected_effect_name == "Flag":
+            # Standaard kleuren en breedtes voor de vlag
+            default_flag_colors_rgb = [(255,0,0), (255,255,255), (0,0,255)] # Rood, Wit, Blauw
+            default_flag_widths = [10, 10, 10]
+
+            for i in range(3): # Voor 3 strepen
+                # Haal kleur op uit action, of gebruik default
+                color_key = f'color_{i}'
+                current_color_rgb = selected_action_params.get(color_key, default_flag_colors_rgb[i])
+                
+                # Haal breedte op uit action, of gebruik default
+                width_key = f'width_{i}'
+                current_width = selected_action_params.get(width_key, default_flag_widths[i])
+
+                # Voeg kleurkiezer en slider toe
+                color_button = self._add_color_picker(f"Kleur {i+1}", color_key)
+                # Update de knopkleur handmatig, omdat _add_color_picker de globale LED kleur gebruikt als init
+                color_button.setStyleSheet(f"background-color: rgb({current_color_rgb[0]},{current_color_rgb[1]},{current_color_rgb[2]});")
+
+                self._add_slider(f"Breedte {i+1}", width_key, 1, 50, current_width)
+            
+            self._add_color_picker("Achtergrond Kleur", "background_color")
+            # Update achtergrondkleur knop
+            bg_color_rgb = selected_action_params.get('background_color', (0,0,0))
+            if 'background_color' in self.current_effect_ui_elements:
+                self.current_effect_ui_elements['background_color'].setStyleSheet(f"background-color: rgb({bg_color_rgb[0]},{bg_color_rgb[1]},{bg_color_rgb[2]});")
+
+        # Voor Static, Pulseline, Multicolor zijn er geen extra specifieke sliders nodig
+        # omdat hun parameters al worden beheerd door de globale helderheid/kleur sliders.
+
 
     def _capture_and_crop_frame(self):
         """
@@ -991,12 +1412,6 @@ class LEDVisualizer(QMainWindow):
 
         painter = QPainter(qimage)
         
-        # Initialiseer variabelen met None om "local variable referenced before assignment" fouten te voorkomen
-        original_aspect_locked_state = None 
-        original_x_range = None
-        original_y_range = None
-        original_padding = None
-
         try:
             painter.setRenderHint(QPainter.Antialiasing) # Optioneel: voor mooiere lijnen
 
@@ -1004,38 +1419,17 @@ class LEDVisualizer(QMainWindow):
             scene = self.plot_widget.getPlotItem().scene()
             view_box = self.plot_widget.getViewBox()
 
-            # Sla de huidige staat van de viewbox op
-            # Gebruik .get() om veilig 'aspectLocked' op te halen, met een fallback van False
-            original_aspect_locked_state = view_box.state.get('aspectLocked', False)
-            original_x_range = view_box.state['viewRange'][0]
-            original_y_range = view_box.state['viewRange'][1]
-            # Gebruik .get() om veilig 'padding' op te halen, met een fallback van 0.0
-            original_padding = view_box.state.get('padding', 0.0) 
-
-            # Tijdelijk de viewbox aanpassen om de exportverhouding te vullen
-            view_box.setAspectLocked(False) # Ontgrendel de beeldverhouding tijdelijk
-            # Stel het bereik van de viewbox in op de exportafmetingen.
-            # Dit zal de inhoud uitrekken/comprimeren om dit bereik te vullen.
-            view_box.setRange(xRange=(0, EXPORT_WIDTH), yRange=(0, EXPORT_HEIGHT), padding=0)
-            
-            # De source_rect is nu het volledige bereik van de viewbox, wat overeenkomt met de exportafmetingen
-            source_rect_for_render = QRectF(0, 0, EXPORT_WIDTH, EXPORT_HEIGHT)
+            # De source_rect voor rendering moet de huidige zichtbare rechthoek van de ViewBox zijn.
+            # Dit zal vastleggen wat momenteel wordt weergegeven, inclusief eventuele uitrekking.
+            source_rect_for_render = view_box.viewRect()
 
             # Render de scene naar de QImage.
-            # De inhoud van source_rect_for_render (de 1920x1080 data-ruimte) wordt geschaald
-            # om precies in qimage.rect() (de 1920x1080 pixel-ruimte) te passen.
+            # De inhoud van source_rect_for_render (de data-ruimte die zichtbaar is in de ViewBox)
+            # wordt geschaald om precies in qimage.rect() (de 1920x1080 pixel-ruimte) te passen.
             scene.render(painter, QRectF(qimage.rect()), source_rect_for_render)
 
         finally:
             painter.end() # Garandeer dat de painter wordt beëindigd
-            # Herstel de oorspronkelijke staat van de viewbox
-            # Alleen herstellen als de originele waarden zijn opgeslagen
-            if original_aspect_locked_state is not None:
-                view_box.setAspectLocked(original_aspect_locked_state)
-            if original_x_range is not None and original_y_range is not None and original_padding is not None:
-                # Herstel de viewRange met de oorspronkelijke padding
-                view_box.setRange(xRange=original_x_range, yRange=original_y_range, padding=original_padding)
-
 
         # Controleer of de QImage geldig is
         if qimage.isNull():
