@@ -88,7 +88,7 @@ except ImportError as e:
             for j in range(1, num_segments + 1):
                 t = j * interval / segment_length
                 new_x = points[i][0] + t * (points[i+1][0] - points[i][0])
-                new_y = points[i][1] + t * (points[i+1][1] - points[i][1])
+                new_y = points[i][1] + t * (points[i+1][1] - points[i][1]) # Corrected line
                 resampled.append((new_x, new_y))
         if len(points) > 1: resampled.append(points[-1])
         return resampled
@@ -372,7 +372,10 @@ except ImportError as e:
             frame = [bg_rgbw] * self.num_leds
             
             if self.params.number_of_lines > 0:
+                # BELANGRIJK: Gehele deling hier. Als self.num_leds klein is en self.params.number_of_lines groot,
+                # kan 'gap' 0 worden, waardoor lijnen overlappen.
                 gap = self.num_leds // self.params.number_of_lines
+                print(f"DEBUG (Running Line): num_leds: {self.num_leds}, number_of_lines: {self.params.number_of_lines}, calculated gap: {gap}")
                 for i in range(self.params.number_of_lines):
                     current_gap = gap * i
                     for width in range(line_width):
@@ -454,7 +457,7 @@ except ImportError as e:
                 # CORRECTIE: Verwijder de dubbele 'brightness' factor.
                 # De 'brightness_factor' is al berekend op basis van self.params.brightness.
                 scaled_red = int(color_input.red * brightness_factor)
-                scaled_green = int(color_input.green * brightness_factor) # Fixed: removed extra 'brightness' multiplication
+                scaled_green = int(color_input.green * brightness_factor) 
                 scaled_blue = int(color_input.blue * brightness_factor)
                 rgbw = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
                 
@@ -566,8 +569,8 @@ class LEDVisualizer(QMainWindow):
 
         control_layout.addWidget(QLabel("LED Grootte (lijndikte):")) # Aangepaste label
         self.line_width_slider = QSlider(Qt.Horizontal, minimum=1, maximum=20, value=self.line_width)
-        # FIX: Voeg self.update_drawing() toe voor directe visuele feedback
-        self.line_width_slider.valueChanged.connect(lambda v: (setattr(self, 'line_width', v), self.update_drawing()))
+        # FIX: Connecteer met een aparte methode voor duidelijkheid en om de update te forceren
+        self.line_width_slider.valueChanged.connect(self._update_line_width_and_draw)
         control_layout.addWidget(self.line_width_slider)
 
         control_layout.addWidget(QPushButton("Kies LED Kleur", clicked=self.choose_led_color))
@@ -630,6 +633,12 @@ class LEDVisualizer(QMainWindow):
 
     def show_status_message(self, message):
         self.statusBar.showMessage(message)
+
+    def _update_line_width_and_draw(self, value):
+        """Update de lijnbreedte en forceer een hertekening."""
+        self.line_width = value
+        print(f"DEBUG: Line width slider changed to: {self.line_width}")
+        self.update_drawing()
 
     def set_current_action_brightness(self, value):
         brightness_val = value / 100.0
@@ -834,11 +843,15 @@ class LEDVisualizer(QMainWindow):
                 self.line_plot_items[action_id] = scatter_item
             else:
                 # Update de data van de bestaande ScatterPlotItem
+                # setData kan x, y, size en brush tegelijkertijd bijwerken
+                print(f"DEBUG (update_drawing - before setData): Current self.line_width: {self.line_width}")
                 scatter_item.setData(
-                    x=x_coords, y=y_coords, 
+                    x=x_coords, 
+                    y=y_coords, 
                     size=self.line_width, 
                     brush=brushes
-                )
+                ) 
+                print(f"DEBUG (update_drawing - after setData): ScatterPlotItem size set to: {self.line_width}")
             
             # Teken bewerkingspunten als de modus "Lijn Bewerken" is en deze lijn geselecteerd is
             if self.draw_mode == "Lijn Bewerken" and action_idx == self.selected_action_index:
@@ -1307,6 +1320,7 @@ class LEDVisualizer(QMainWindow):
                 action[param_name] = value
             
             action['reset_effect_state'] = True
+            print(f"DEBUG (set_effect_specific_param): Parameter '{param_name}' set to: {value} for action {self.selected_action_index}")
             self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
         else:
             self.show_status_message("Selecteer een lijn om effect-specifieke parameters in te stellen.")
