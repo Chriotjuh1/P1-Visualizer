@@ -20,3 +20,7 @@ class Effects:
         Moet worden geïmplementeerd door subklassen om het volgende LED-frame te retourneren.
         """
         raise NotImplementedError("Do not call get next frame on the base class")
+
+# Voeg een alias toe zodat 'BaseEffect' ook geïmporteerd kan worden,
+# voor compatibiliteit met andere modules die mogelijk deze naam verwachten.
+BaseEffect = Effects

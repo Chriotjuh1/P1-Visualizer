@@ -13,7 +13,7 @@ import uuid # Voor het genereren van unieke ID's
 # Dit is cruciaal als het script niet vanuit de root van de projectmap wordt uitgevoerd.
 script_dir = os.path.abspath(os.path.dirname(__file__)) # Gebruik absolute pad
 if script_dir not in sys.path:
-    sys.path.insert(0, script_dir)
+    sys.sys.path.insert(0, script_dir)
 
 # print(f"DEBUG: script_dir: {script_dir}") # Debug output, kan uitgecommentarieerd worden
 # print(f"DEBUG: sys.path na toevoeging: {sys.path}") # Debug output, kan uitgecommentarieerd worden
@@ -137,6 +137,7 @@ except ImportError as e:
             self.fps = model.fps
             self._num_leds = model.num_leds
             self._on_num_leds_change()
+            self.current_frame = 0.0 # Initialiseer current_frame in de basisklasse
 
         @property
         def num_leds(self):
@@ -211,12 +212,11 @@ except ImportError as e:
                 self.frame_counter -= steps_to_take
                 
                 for _ in range(steps_to_take):
-                    if self.moving_right:
-                        self.position += 1
-                        if self.position + line_length >= self.num_leds:
-                            self.moving_right = False
-                            self.position = self.num_leds - line_length -1 
-                            if self.position < 0: self.position = 0
+                    self.position += 1
+                    if self.position + line_length >= self.num_leds:
+                        self.moving_right = False
+                        self.position = self.num_leds - line_length -1 
+                        if self.position < 0: self.position = 0
                     else:
                         self.position -= 1
                         if self.position <= 0:
@@ -488,8 +488,8 @@ class LEDVisualizer(QMainWindow):
     Biedt functionaliteit voor het laden van afbeeldingen, tekenen van lijnen,
     toepassen van visuele effecten, en exporteren van afbeeldingen/video's.
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None): # Voeg parent toe voor betere PyQt5 praktijken
+        super().__init__(parent)
         self.setWindowTitle("Pulseline1 Visualizer")
         self.setGeometry(100, 100, 1920, 1080) # Standaard venstergrootte
         
@@ -716,6 +716,9 @@ class LEDVisualizer(QMainWindow):
             action_id = action.get('id', str(uuid.uuid4()))
             if 'id' not in action: action['id'] = action_id
 
+            # Debug print om de huidige actie staat te zien
+            # print(f"DEBUG (update_drawing - before params_data): Action ID: {action_id}, Current action state: {action}") # Uitgeschakeld voor minder console spam
+
             pts = action["points"]
             
             # Sla lege of te korte lijnen over
@@ -731,7 +734,8 @@ class LEDVisualizer(QMainWindow):
                 continue
 
             # Bepaal het huidige effect en zijn parameters
-            effect_name = self.effect_names[self.effect_combo.currentIndex()]
+            # Gebruik de opgeslagen effect_name van de actie, anders de globaal geselecteerde
+            effect_name = action.get('effect_name', self.effect_names[self.effect_combo.currentIndex()])
             EffectClass = get_effect_class(effect_name)
             
             # Selecteer het juiste parameter schema voor het effect
@@ -770,14 +774,24 @@ class LEDVisualizer(QMainWindow):
                 flag_colors_data = action.get('color', default_flag_colors_rgb)
                 
                 if not (isinstance(flag_colors_data, list) and all(isinstance(c, (list, tuple)) for c in flag_colors_data)):
+                    # print(f"DEBUG (update_drawing - Flag): 'color' in action is niet een lijst van tuples, resetten naar standaard.") # Uitgeschakeld
                     flag_colors_data = default_flag_colors_rgb
 
                 flag_colors = [Color(red=c[0], green=c[1], blue=c[2]) for c in flag_colors_data]
                 flag_widths = action.get('width', default_flag_widths)
+                
+                if not (isinstance(flag_widths, list) and all(isinstance(w, (int, float)) for w in flag_widths)):
+                    # print(f"DEBUG (update_drawing - Flag): 'width' in action is geen lijst van nummers, resetten naar standaard.") # Uitgeschakeld
+                    flag_widths = default_flag_widths
+
+
                 bg_color_rgb = action.get('background_color', (0,0,0))
                 params_data = {"color": flag_colors, "brightness": int(current_brightness * 100), "width": flag_widths, "background_color": Color(red=bg_color_rgb[0], green=bg_color_rgb[1], blue=bg_color_rgb[2])}
             else:
                 params_data = {"color": [Color(red=r_base, green=g_base, blue=b_base)], "brightness": int(current_brightness * 100)}
+
+            # print(f"DEBUG (update_drawing): Effect '{effect_name}' voor actie '{action_id}' met parameters: {params_data}") # Uitgeschakeld voor minder console spam
+
 
             # Bereken de totale lengte van de lijn en het aantal virtuele LED's
             total_line_length = sum(distance(pts[k], pts[k+1]) for k in range(len(pts) - 1))
@@ -804,8 +818,10 @@ class LEDVisualizer(QMainWindow):
                 effect_instance = EffectClass(model)
                 self.effect_instances[action_id] = effect_instance
                 action['reset_effect_state'] = False
+                # print(f"DEBUG (update_drawing): Nieuwe effect instantie gemaakt voor actie '{action_id}'.") # Uitgeschakeld
             else:
                 # Update bestaande effect instantie met nieuwe parameters en LED-aantal
+                # print(f"DEBUG (update_drawing): Bestaande effect instantie bijgewerkt voor actie '{action_id}'.") # Uitgeschakeld
                 effect_instance.params = ParamsModel(**params_data)
                 effect_instance.num_leds = num_leds_for_this_line # Update num_leds property
                 effect_instance.fps = calculated_fps
@@ -844,14 +860,14 @@ class LEDVisualizer(QMainWindow):
             else:
                 # Update de data van de bestaande ScatterPlotItem
                 # setData kan x, y, size en brush tegelijkertijd bijwerken
-                print(f"DEBUG (update_drawing - before setData): Current self.line_width: {self.line_width}")
+                # print(f"DEBUG (update_drawing - before setData): Current self.line_width: {self.line_width}") # Debug print
                 scatter_item.setData(
                     x=x_coords, 
                     y=y_coords, 
                     size=self.line_width, 
                     brush=brushes
                 ) 
-                print(f"DEBUG (update_drawing - after setData): ScatterPlotItem size set to: {self.line_width}")
+                # print(f"DEBUG (update_drawing - after setData): ScatterPlotItem size set to: {self.line_width}") # Debug print
             
             # Teken bewerkingspunten als de modus "Lijn Bewerken" is en deze lijn geselecteerd is
             if self.draw_mode == "Lijn Bewerken" and action_idx == self.selected_action_index:
@@ -873,6 +889,8 @@ class LEDVisualizer(QMainWindow):
         self.effect_index = self.effect_combo.currentIndex()
         for action in self.actions:
             action['reset_effect_state'] = True
+            # Update de effectnaam van de actie zodat de juiste parameterschema wordt gebruikt
+            action['effect_name'] = self.effect_names[self.effect_index]
         self.show_status_message(f"Effect gewijzigd naar: {self.effect_names[self.effect_index]}")
         self.update_effect_parameters_ui()
         self.update_drawing()
@@ -1141,19 +1159,108 @@ class LEDVisualizer(QMainWindow):
                 return True
         return super().eventFilter(source, event)
     
+    def _get_current_effect_params_from_ui(self):
+        """
+        Haalt de huidige waarden van de effect-specifieke UI-elementen op.
+        Deze methode wordt gebruikt om de parameters voor NIEUWE lijnen te initialiseren.
+        """
+        params = {}
+        selected_effect_name = self.effect_combo.currentText()
+
+        # Haal globale helderheid en snelheid op (deze zijn altijd aanwezig)
+        params['brightness'] = self.brightness_slider.value() / 100.0
+        params['speed'] = self.speed_slider.value()
+
+        # Haal effect-specifieke parameters op
+        # Gebruik .get() met een fallback om te voorkomen dat er een fout optreedt als de widget er niet is
+        # (bijvoorbeeld als de UI nog niet is geladen of de slider/knop niet van toepassing is op het huidige effect)
+        if selected_effect_name == "Knight Rider":
+            params['line_length'] = self.current_effect_ui_elements.get('line_length', QSlider()).value()
+        elif selected_effect_name == "Meteor":
+            params['meteor_width'] = self.current_effect_ui_elements.get('meteor_width', QSlider()).value()
+            params['spark_intensity'] = self.current_effect_ui_elements.get('spark_intensity', QSlider()).value()
+        elif selected_effect_name == "Running Line":
+            params['line_width'] = self.current_effect_ui_elements.get('line_width', QSlider()).value()
+            params['number_of_lines'] = self.current_effect_ui_elements.get('number_of_lines', QSlider()).value()
+            
+            bg_button = self.current_effect_ui_elements.get('background_color')
+            if bg_button:
+                style = bg_button.styleSheet()
+                import re
+                match = re.search(r'rgb\((\d+),(\d+),(\d+)\)', style)
+                if match:
+                    params['background_color'] = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                else:
+                    params['background_color'] = (0,0,0) # Standaard indien niet gevonden
+            else:
+                params['background_color'] = (0,0,0) # Standaard indien knop niet bestaat
+                
+        elif selected_effect_name == "Christmas Snow":
+            params['red_chance'] = self.current_effect_ui_elements.get('red_chance', QSlider()).value()
+            params['dark_green_chance'] = self.current_effect_ui_elements.get('dark_green_chance', QSlider()).value()
+        elif selected_effect_name == "Flag":
+            colors = []
+            widths = []
+            for i in range(3):
+                color_button = self.current_effect_ui_elements.get(f'color_{i}')
+                if color_button:
+                    style = color_button.styleSheet()
+                    import re
+                    match = re.search(r'rgb\((\d+),(\d+),(\d+)\)', style)
+                    if match:
+                        colors.append((int(match.group(1)), int(match.group(2)), int(match.group(3))))
+                width_slider = self.current_effect_ui_elements.get(f'width_{i}')
+                if width_slider:
+                    widths.append(width_slider.value())
+            if colors: params['color'] = colors
+            if widths: params['width'] = widths
+
+            bg_button = self.current_effect_ui_elements.get('background_color')
+            if bg_button:
+                style = bg_button.styleSheet()
+                import re
+                match = re.search(r'rgb\((\d+),(\d+),(\d+)\)', style)
+                if match:
+                    params['background_color'] = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                else:
+                    params['background_color'] = (0,0,0) # Standaard indien niet gevonden
+            else:
+                params['background_color'] = (0,0,0) # Standaard indien knop niet bestaat
+
+
+        # print(f"DEBUG (_get_current_effect_params_from_ui): Gevonden parameters: {params}") # Uitgeschakeld voor minder console spam
+        return params
+
     def handle_mouse_press(self, event):
         pos = self.plot_widget.getViewBox().mapSceneToView(event.pos())
         point = (pos.x(), pos.y())
 
+        # Haal de huidige UI-waarden op om de nieuwe actie te initialiseren
+        effect_params_from_ui = self._get_current_effect_params_from_ui()
+        
+        base_action_data = {
+            "id": str(uuid.uuid4()),
+            "points": [point],
+            "color": self.led_color, # Dit is de hoofd LED kleur, niet effect-specifieke kleuren die in effect_params_from_ui zitten
+            'reset_effect_state': True,
+            'recalculate_resample': True,
+            'effect_name': self.effect_combo.currentText() # Sla het geselecteerde effect op
+        }
+        # Voeg alle parameters van de UI toe aan de nieuwe actie, inclusief brightness en speed
+        base_action_data.update(effect_params_from_ui)
+
         if self.draw_mode == "Vrij Tekenen":
             self.drawing = True
-            self.current_action = {"id": str(uuid.uuid4()), "mode": self.draw_mode, "points": [point], "color": self.led_color, 'speed': self.default_speed, 'brightness': self.default_brightness, 'reset_effect_state': True, 'recalculate_resample': True}
+            self.current_action = base_action_data
+            self.current_action["mode"] = self.draw_mode
             self.show_status_message("Vrij tekenen gestart.")
         elif self.draw_mode == "Lijn Tekenen":
             if not self.line_drawing_first_click:
                 self.drawing = True
                 self.line_drawing_first_click = True
-                self.current_action = {"id": str(uuid.uuid4()), "mode": self.draw_mode, "points": [point, point], "color": self.led_color, 'speed': self.default_speed, 'brightness': self.default_brightness, 'reset_effect_state': True, 'recalculate_resample': True}
+                base_action_data["points"] = [point, point] # Voor lijntekenen, begin met twee punten
+                self.current_action = base_action_data
+                self.current_action["mode"] = self.draw_mode
                 self.show_status_message("Beginpunt van lijn geselecteerd.")
             else:
                 if self.current_action:
@@ -1252,6 +1359,7 @@ class LEDVisualizer(QMainWindow):
         self.effect_params_layout.addWidget(label)
         self.effect_params_layout.addWidget(slider)
         self.current_effect_ui_elements[param_name] = slider
+        # print(f"DEBUG (_add_slider): Slider '{param_name}' toegevoegd met standaardwaarde: {default_val}") # Uitgeschakeld
         return slider
 
     def _add_color_picker(self, label_text, param_name):
@@ -1260,74 +1368,135 @@ class LEDVisualizer(QMainWindow):
         button.clicked.connect(lambda: self._choose_effect_color(param_name, button))
         
         initial_color = self.led_color
+        # Bepaal initial_color op basis van geselecteerde lijn, tekenende lijn, of globale standaard
         if self.selected_action_index != -1:
             selected_action = self.actions[self.selected_action_index]
             if param_name.startswith("color_"):
                 color_idx = int(param_name.split('_')[1])
-                if 'color' in selected_action and isinstance(selected_action['color'], list) and len(selected_action['color']) > color_idx:
-                    initial_color = selected_action['color'][color_idx]
-                elif 'color' in selected_action and isinstance(selected_action['color'], tuple):
-                    initial_color = selected_action['color']
+                # Check of 'color' een lijst is voor Flag effect of een tuple voor andere
+                if 'color' in selected_action:
+                    if isinstance(selected_action['color'], list) and len(selected_action['color']) > color_idx:
+                        initial_color = selected_action['color'][color_idx]
+                    elif isinstance(selected_action['color'], tuple): # Voor Static/Pulseline die 1 kleur hebben
+                        initial_color = selected_action['color']
             elif param_name == "background_color" and 'background_color' in selected_action and isinstance(selected_action['background_color'], tuple):
                 initial_color = selected_action['background_color']
-        
+        elif self.drawing and self.current_action:
+            current_drawing_action = self.current_action
+            if param_name.startswith("color_"):
+                color_idx = int(param_name.split('_')[1])
+                if 'color' in current_drawing_action:
+                    if isinstance(current_drawing_action['color'], list) and len(current_drawing_action['color']) > color_idx:
+                        initial_color = current_drawing_action['color'][color_idx]
+                    elif isinstance(current_drawing_action['color'], tuple):
+                        initial_color = current_drawing_action['color']
+            elif param_name == "background_color" and 'background_color' in current_drawing_action and isinstance(current_drawing_action['background_color'], tuple):
+                initial_color = current_drawing_action['background_color']
+
+
         button.setStyleSheet(f"background-color: rgb({initial_color[0]},{initial_color[1]},{initial_color[2]});")
         
         self.effect_params_layout.addWidget(label)
         self.effect_params_layout.addWidget(button)
         self.current_effect_ui_elements[param_name] = button
+        # print(f"DEBUG (_add_color_picker): Kleurkiezer '{param_name}' toegevoegd met initiële kleur: {initial_color}") # Uitgeschakeld
         return button
 
     def _choose_effect_color(self, param_name, button):
         current_color_rgb = self.led_color
+        # Bepaal current_color_rgb op basis van geselecteerde lijn, tekenende lijn, of globale standaard
         if self.selected_action_index != -1:
             selected_action = self.actions[self.selected_action_index]
             if param_name.startswith("color_"):
                 color_idx = int(param_name.split('_')[1])
-                if 'color' in selected_action and isinstance(selected_action['color'], list) and len(selected_action['color']) > color_idx:
-                    current_color_rgb = selected_action['color'][color_idx]
-                elif 'color' in selected_action and isinstance(selected_action['color'], tuple):
-                    current_color_rgb = selected_action['color']
+                if 'color' in selected_action:
+                    if isinstance(selected_action['color'], list) and len(selected_action['color']) > color_idx:
+                        current_color_rgb = selected_action['color'][color_idx]
+                    elif isinstance(selected_action['color'], tuple):
+                        current_color_rgb = selected_action['color']
             elif param_name == "background_color" and 'background_color' in selected_action and isinstance(selected_action['background_color'], tuple):
                 current_color_rgb = selected_action['background_color']
+        elif self.drawing and self.current_action:
+            current_drawing_action = self.current_action
+            if param_name.startswith("color_"):
+                color_idx = int(param_name.split('_')[1])
+                if 'color' in current_drawing_action:
+                    if isinstance(current_drawing_action['color'], list) and len(current_drawing_action['color']) > color_idx:
+                        current_color_rgb = current_drawing_action['color'][color_idx]
+                    elif isinstance(current_drawing_action['color'], tuple):
+                        current_color_rgb = current_drawing_action['color']
+            elif param_name == "background_color" and 'background_color' in current_drawing_action and isinstance(current_drawing_action['background_color'], tuple):
+                current_color_rgb = current_drawing_action['background_color']
 
+        # print(f"DEBUG (_choose_effect_color): Huidige kleur voor '{param_name}': {current_color_rgb}") # Uitgeschakeld
         color = QColorDialog.getColor(QColor(*current_color_rgb))
         if color.isValid():
             new_rgb = (color.red(), color.green(), color.blue())
             button.setStyleSheet(f"background-color: rgb({new_rgb[0]},{new_rgb[1]},{new_rgb[2]});")
             self.set_effect_specific_param(param_name, new_rgb)
+            # print(f"DEBUG (_choose_effect_color): Nieuwe kleur geselecteerd voor '{param_name}': {new_rgb}") # Uitgeschakeld
 
     def set_effect_specific_param(self, param_name, value):
+        actions_to_update = []
+        
+        # Bepaal welke actie(s) moeten worden bijgewerkt
         if self.selected_action_index != -1:
-            action = self.actions[self.selected_action_index]
-            
+            actions_to_update.append(self.actions[self.selected_action_index])
+            self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
+        elif self.drawing and self.current_action:
+            actions_to_update.append(self.current_action)
+            self.show_status_message(f"Parameter '{param_name}' van tekenende lijn ingesteld op: {value}")
+        else:
+            # Als er geen lijn is geselecteerd en er wordt niet getekend, pas dan toe op alle bestaande lijnen
+            actions_to_update = self.actions
+            self.show_status_message(f"Globale parameter '{param_name}' ingesteld op: {value} voor alle lijnen.")
+
+        if not actions_to_update:
+            # Dit kan gebeuren als er geen lijnen zijn en er niet wordt getekend
+            self.show_status_message("Geen lijnen om parameters op toe te passen.")
+            return
+
+        for target_action in actions_to_update:
+            # Zorg ervoor dat de effect_name altijd correct is ingesteld in de actie
+            # Dit is vooral belangrijk voor lijnen die al bestaan of uit undo/redo komen
+            if 'effect_name' not in target_action or target_action['effect_name'] != self.effect_combo.currentText():
+                 target_action['effect_name'] = self.effect_combo.currentText()
+
+            # Nu de logica voor het bijwerken van parameters
             if param_name.startswith("color_"):
                 color_idx = int(param_name.split('_')[1])
-                if 'color' not in action or not isinstance(action.get('color'), list):
-                    # If it's a tuple or doesn't exist, create a list based on default colors
-                    action['color'] = [(255,0,0), (255,255,255), (0,0,255)]
-                while len(action['color']) <= color_idx:
-                    action['color'].append((255,255,255)) # Add white as default for new colors
-                action['color'][color_idx] = value
+                # Als 'color' nog geen lijst is (bijv. een enkele tuple van self.led_color), converteer naar een lijst
+                if 'color' not in target_action or not isinstance(target_action['color'], list):
+                    # Als het een Flag effect is, initialiseren met standaard 3 kleuren, anders met de hoofd LED kleur
+                    if target_action.get('effect_name') == "Flag":
+                         target_action['color'] = [(255,0,0), (255,255,255), (0,0,255)]
+                    else: # Bijv. voor Static of Pulseline
+                         target_action['color'] = [target_action.get('color', self.led_color)] # Gebruik bestaande kleur of default
+                
+                # Zorg ervoor dat de lijst lang genoeg is
+                while len(target_action['color']) <= color_idx:
+                    target_action['color'].append((255,255,255)) # Voeg wit toe als standaard voor nieuwe extra kleuren
+                target_action['color'][color_idx] = value
+                # print(f"DEBUG (set_effect_specific_param): Kleur '{param_name}' ingesteld op: {value}. Huidige target_action.color: {target_action['color']}") # Uitgeschakeld
             elif param_name.startswith("width_"):
                 width_idx = int(param_name.split('_')[1])
-                if 'width' not in action or not isinstance(action.get('width'), list):
-                    action['width'] = [10, 10, 10]
-                while len(action['width']) <= width_idx:
-                    action['width'].append(10)
-                action['width'][width_idx] = value
+                if 'width' not in target_action or not isinstance(target_action['width'], list):
+                    target_action['width'] = [10, 10, 10] # Standaard breedtes voor Flag effect
+                
+                while len(target_action['width']) <= width_idx:
+                    target_action['width'].append(10)
+                target_action['width'][width_idx] = value
+                # print(f"DEBUG (set_effect_specific_param): Breedte '{param_name}' ingesteld op: {value}. Huidige target_action.width: {target_action['width']}") # Uitgeschakeld
             else:
-                action[param_name] = value
+                target_action[param_name] = value
+                # print(f"DEBUG (set_effect_specific_param): Parameter '{param_name}' ingesteld op: {value}") # Uitgeschakeld
             
-            action['reset_effect_state'] = True
-            print(f"DEBUG (set_effect_specific_param): Parameter '{param_name}' set to: {value} for action {self.selected_action_index}")
-            self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
-        else:
-            self.show_status_message("Selecteer een lijn om effect-specifieke parameters in te stellen.")
+            target_action['reset_effect_state'] = True # Forceer herinitialisatie van het effect
 
         self.update_drawing()
 
     def update_effect_parameters_ui(self):
+        # print("DEBUG (update_effect_parameters_ui): UI-parameters worden bijgewerkt.") # Uitgeschakeld
         for i in reversed(range(self.effect_params_layout.count())):
             widget = self.effect_params_layout.itemAt(i).widget()
             if widget:
@@ -1337,30 +1506,86 @@ class LEDVisualizer(QMainWindow):
 
         selected_effect_name = self.effect_combo.currentText()
         
-        selected_action_params = {}
+        # Bepaal welke parameterset moet worden gebruikt voor de UI-initialisatie
+        current_params_source = {}
         if self.selected_action_index != -1:
-            selected_action_params = self.actions[self.selected_action_index]
+            current_params_source = self.actions[self.selected_action_index]
+            # print(f"DEBUG (update_effect_parameters_ui): Geselecteerde actie parameters: {current_params_source}") # Uitgeschakeld
+        elif self.drawing and self.current_action:
+            current_params_source = self.current_action
+            # print(f"DEBUG (update_effect_parameters_ui): Huidige tekenactie parameters: {current_params_source}") # Uitgeschakeld
+        else:
+            # Als er geen specifieke lijn is geselecteerd of wordt getekend,
+            # toon de waarden die van toepassing zouden zijn op een nieuwe lijn.
+            # Dit zijn de "globale" waarden voor effect-specifieke parameters.
+            # Voorzichtig: Als de acties leeg zijn, zijn er geen effect-specifieke parameters opgeslagen.
+            # We gebruiken dan de standaardwaarden van _add_slider.
+            if self.actions:
+                # Neem de parameters van de eerste lijn als 'globale' waarden voor de UI als er geen selectie is.
+                # Dit is een heuristiek; in een complexere app zou je een expliciete globale staat hebben.
+                current_params_source = self.actions[0] # Misschien een beter algoritme hier nodig voor "globale" weergave
+            # print("DEBUG (update_effect_parameters_ui): Geen lijn geselecteerd of getekend. Laden defaults of van eerste lijn.")
+
 
         if selected_effect_name == "Knight Rider":
-            default_val = selected_action_params.get('line_length', 10) 
-            self._add_slider("Lijnlengte", "line_length", 1, 50, default_val) 
+            default_val = current_params_source.get('line_length', 10) 
+            slider = self._add_slider("Lijnlengte", "line_length", 1, 50, default_val)
+            slider.blockSignals(True) # Blokkeer signalen tijdens initialisatie
+            slider.setValue(default_val) # Stel de waarde expliciet in
+            slider.blockSignals(False) # Deblokkeer signalen
         
         elif selected_effect_name == "Meteor":
-            self._add_slider("Meteoor Breedte", "meteor_width", 1, 50, selected_action_params.get('meteor_width', 10))
-            self._add_slider("Vonk Intensiteit", "spark_intensity", 0, 100, selected_action_params.get('spark_intensity', 50))
+            default_meteor_width = current_params_source.get('meteor_width', 10)
+            slider_width = self._add_slider("Meteoor Breedte", "meteor_width", 1, 50, default_meteor_width)
+            slider_width.blockSignals(True)
+            slider_width.setValue(default_meteor_width)
+            slider_width.blockSignals(False)
+
+            default_spark_intensity = current_params_source.get('spark_intensity', 50)
+            slider_spark = self._add_slider("Vonk Intensiteit", "spark_intensity", 0, 100, default_spark_intensity)
+            slider_spark.blockSignals(True)
+            slider_spark.setValue(default_spark_intensity)
+            slider_spark.blockSignals(False)
         
         elif selected_effect_name == "Running Line":
-            self._add_slider("Lijn Breedte", "line_width", 1, 20, selected_action_params.get('line_width', 5))
-            self._add_slider("Aantal Lijnen", "number_of_lines", 1, 10, selected_action_params.get('number_of_lines', 3))
-            self._add_color_picker("Achtergrond Kleur", "background_color")
+            default_line_width = current_params_source.get('line_width', 5)
+            slider_line_width = self._add_slider("Lijn Breedte", "line_width", 1, 20, default_line_width)
+            slider_line_width.blockSignals(True)
+            slider_line_width.setValue(default_line_width)
+            slider_line_width.blockSignals(False)
+
+            default_num_lines = current_params_source.get('number_of_lines', 3)
+            slider_num_lines = self._add_slider("Aantal Lijnen", "number_of_lines", 1, 10, default_num_lines)
+            slider_num_lines.blockSignals(True)
+            slider_num_lines.setValue(default_num_lines)
+            slider_num_lines.blockSignals(False)
+
+            color_button = self._add_color_picker("Achtergrond Kleur", "background_color")
+            bg_color_rgb = current_params_source.get('background_color', (0,0,0))
+            color_button.setStyleSheet(f"background-color: rgb({bg_color_rgb[0]},{bg_color_rgb[1]},{bg_color_rgb[2]});") # Zorg ervoor dat de kleurknop correct is ingesteld
         
         elif selected_effect_name == "Christmas Snow":
-            self._add_slider("Rode Kans (%)", "red_chance", 0, 100, selected_action_params.get('red_chance', 30))
-            self._add_slider("Donkergroene Kans (%)", "dark_green_chance", 0, 100, selected_action_params.get('dark_green_chance', 30))
+            default_red_chance = current_params_source.get('red_chance', 30)
+            slider_red_chance = self._add_slider("Rode Kans (%)", "red_chance", 0, 100, default_red_chance)
+            slider_red_chance.blockSignals(True)
+            slider_red_chance.setValue(default_red_chance)
+            slider_red_chance.blockSignals(False)
+
+            default_dark_green_chance = current_params_source.get('dark_green_chance', 30)
+            slider_dark_green_chance = self._add_slider("Donkergroene Kans (%)", "dark_green_chance", 0, 100, default_dark_green_chance)
+            slider_dark_green_chance.blockSignals(True)
+            slider_dark_green_chance.setValue(default_dark_green_chance)
+            slider_dark_green_chance.blockSignals(False)
         
         elif selected_effect_name == "Flag":
-            default_colors = selected_action_params.get('color', [(255,0,0), (255,255,255), (0,0,255)])
-            default_widths = selected_action_params.get('width', [10, 10, 10])
+            # Zorg ervoor dat de default_colors en default_widths lijsten zijn
+            default_colors = current_params_source.get('color')
+            if not isinstance(default_colors, list) or not all(isinstance(c, (list, tuple)) for c in default_colors):
+                default_colors = [(255,0,0), (255,255,255), (0,0,255)]
+            
+            default_widths = current_params_source.get('width')
+            if not isinstance(default_widths, list) or not all(isinstance(w, (int, float)) for w in default_widths):
+                default_widths = [10, 10, 10]
 
             for i in range(3):
                 color_button = self._add_color_picker(f"Kleur {i+1}", f"color_{i}")
@@ -1368,11 +1593,16 @@ class LEDVisualizer(QMainWindow):
                 color_button.setStyleSheet(f"background-color: rgb({current_color_rgb[0]},{current_color_rgb[1]},{current_color_rgb[2]});")
 
                 current_width = default_widths[i] if i < len(default_widths) else 10
-                self._add_slider(f"Breedte {i+1}", f"width_{i}", 1, 50, current_width)
+                slider_width = self._add_slider(f"Breedte {i+1}", f"width_{i}", 1, 50, current_width)
+                slider_width.blockSignals(True)
+                slider_width.setValue(current_width)
+                slider_width.blockSignals(False)
             
             bg_button = self._add_color_picker("Achtergrond Kleur", "background_color")
-            bg_color_rgb = selected_action_params.get('background_color', (0,0,0))
+            bg_color_rgb = current_params_source.get('background_color', (0,0,0))
             bg_button.setStyleSheet(f"background-color: rgb({bg_color_rgb[0]},{bg_color_rgb[1]},{bg_color_rgb[2]});")
+        
+        # print("DEBUG (update_effect_parameters_ui): UI-parameters bijgewerkt voltooid.") # Uitgeschakeld
 
 
     def _capture_and_crop_frame(self):

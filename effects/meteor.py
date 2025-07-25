@@ -1,126 +1,102 @@
 # P1-Visualizer/effects/meteor.py
+
 import random
-import time
 from .base_effect import Effects
-from .schemas import MeteorParams
+from .schemas import EffectModel, MeteorParams
 from .converts import rgb_to_rgbw
 
 class MeteorEffect(Effects):
-    params: MeteorParams
-    meteor_position: float = 0.0
-    sparks: list = []
-    sparkle_brightness: int = 255
-
-    def __init__(self, model):
+    """
+    Een effect dat een "meteoor" simuleert die over de LED-strip beweegt,
+    met een vervagende staart en optionele vonken.
+    """
+    def __init__(self, model: EffectModel):
         super().__init__(model)
-        self.params = model.params
-        self.num_leds = model.num_leds # Haal num_leds uit het model
-        self.fps = model.fps # Haal fps uit het model
-        self.last_frame_time = time.time()
+        # Type checking for parameters
+        if not isinstance(self.params, MeteorParams):
+            raise ValueError("Parameters for MeteorEffect must be of type MeteorParams")
 
-        # Time accumulator voor frame-onafhankelijke animatie
-        self.time_accumulator = 0.0
-        self.frame_duration = 1.0 / self.fps if self.fps > 0 else 0.0
+        self.max_sparkle_duration = 100 # Maximale levensduur van een vonk
+        self.current_frame = 0.0 # Initialiseer current_frame als float voor nauwkeurigere animatie
+        self._on_num_leds_change() # Roep deze aan om de initiële positie en vonken in te stellen
 
-        # Initialiseer de interne staat van de meteor
-        self._initialize_state()
+    def _on_num_leds_change(self):
+        """Reset de status wanneer het aantal LEDs verandert."""
+        # Start de meteoor aan het einde van de strip
+        self.position = float(self.num_leds - 1)
+        self.sparkles = {} # {led_index: remaining_duration}
 
-    def _initialize_state(self):
+    def get_next_frame(self):
         """
-        Initialiseert of reset de interne staat van de meteor.
-        Dit wordt aangeroepen bij __init__ en wanneer num_leds of fps verandert.
+        Retourneert het volgende frame voor het Meteor effect.
         """
-        self.meteor_position = 0.0 # Reset meteor positie
-        self.sparks = [] # Wis bestaande vonken
-
-        # BELANGRIJK: Zorg ervoor dat frame_buffer de juiste grootte heeft
-        self.frame_buffer = [[0, 0, 0, 0] for _ in range(self.num_leds)]
+        # --- State Update Logic (throttled by speed/fps) ---
         
-        # Zorg ervoor dat frame_duration correct is bij herinitialisatie
-        self.frame_duration = 1.0 / self.fps if self.fps > 0 else 0.0
-        self.time_accumulator = 0.0 # Reset time accumulator
+        # De visualizer's timer draait op ~33 FPS (30ms).
+        # self.fps is de doelsnelheid van de slider (bijv. 6 tot 150).
+        # Bereken hoeveel stappen de animatie deze frame moet vooruitgaan.
+        advance_steps = self.fps / 33.0
+        self.current_frame += advance_steps
 
-    def get_next_frame(self) -> list[list[int]]:
-        # BELANGRIJK: Controleer of num_leds of fps is gewijzigd en initialiseer/update indien nodig
-        # Dit is de cruciale controle die de IndexError voorkomt.
-        if len(self.frame_buffer) != self.num_leds or self.fps != self.model.fps:
-            self.num_leds = self.model.num_leds # Update num_leds van het model
-            self.fps = self.model.fps # Update fps van het model
-            self._initialize_state() # Roep de initialisatiemethode aan
-
-        current_time = time.time()
-        delta_time = current_time - self.last_frame_time
-        self.last_frame_time = current_time
-
-        self.time_accumulator += delta_time
-
-        # Update de interne staat van de meteor alleen als er genoeg tijd is verstreken
-        # Dit zorgt voor frame-onafhankelijke beweging
-        while self.time_accumulator >= self.frame_duration:
-            # Beweeg meteor kop met 1 logische stap per frame
-            self.meteor_position = (self.meteor_position + 1) % self.num_leds
-
-            # Genereer vonken (als spark_intensity is ingesteld)
-            if self.params.spark_intensity > 0:
-                # Hoe groter spark_intensity, hoe groter de kans op een vonk
-                if random.randint(0, 100) < self.params.spark_intensity:
-                    spark_pos = random.randint(0, self.num_leds - 1)
-                    spark_color_rgb = (self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue)
-                    spark_color_rgbw = rgb_to_rgbw(spark_color_rgb[0], spark_color_rgb[1], spark_color_rgb[2])
-                    self.sparks.append([spark_pos, list(spark_color_rgbw), self.sparkle_brightness])
+        if self.current_frame >= 1.0:
+            steps_to_take = int(self.current_frame)
+            self.current_frame -= steps_to_take
             
-            # Vervaag vonken (dit gebeurt nu ook per logische frame)
-            new_sparks = []
-            for spark_data in self.sparks:
-                s_pos, s_color_rgbw, s_intensity = spark_data
-                fade_amount = 20 # Hoe snel vonken vervagen (kan een parameter worden)
-                s_intensity = max(0, s_intensity - fade_amount)
-                if s_intensity > 0:
-                    new_sparks.append([s_pos, s_color_rgbw, s_intensity])
-            self.sparks = new_sparks
+            for _ in range(steps_to_take):
+                self.position -= 1 # Beweeg de meteoor één stap naar links
 
-            self.time_accumulator -= self.frame_duration
+                # Reset logica: reset als de meteoor + staart volledig van het scherm is
+                if self.position + self.params.meteor_width < -self.max_sparkle_duration:
+                    self.position = float(self.num_leds - 1)
+                    self.sparkles.clear() # Wis alle vonken bij reset
 
-        # Begin met een leeg (zwart) frame voor de huidige iteratie
-        # BELANGRIJK: Initialiseer 'frame' hier altijd met de juiste grootte
-        frame = [[0, 0, 0, 0] for _ in range(self.num_leds)]
+                # Sparkle creatie
+                # Een vonk verschijnt aan het einde van de meteoor
+                sparkle_index = int(self.position) + self.params.meteor_width
+                if 0 <= sparkle_index < self.num_leds:
+                    if random.randint(0, 100) < self.params.spark_intensity:
+                        self.sparkles[sparkle_index] = self.max_sparkle_duration # Geef de vonk een volledige levensduur
 
-        # Teken meteor spoor op basis van de huidige (mogelijk geüpdatete) positie
+        # --- Drawing Logic (elke frame) ---
+        frame = [[0, 0, 0, 0]] * self.num_leds # Start met een leeg (zwart) frame
+        brightness_factor = self.params.brightness / 100.0
+        r_base = self.params.color[0].red
+        g_base = self.params.color[0].green
+        b_base = self.params.color[0].blue
+
+        # Teken de meteoor (hoofdgedeelte)
         for i in range(self.params.meteor_width):
-            # Bereken de index van de huidige LED in het spoor
-            idx = (int(self.meteor_position) - i + self.num_leds) % self.num_leds
+            led_index = int(self.position) + i
+            if 0 <= led_index < self.num_leds:
+                r = int(r_base * brightness_factor)
+                g = int(g_base * brightness_factor)
+                b = int(b_base * brightness_factor)
+                frame[led_index] = rgb_to_rgbw(r, g, b)
+
+        # Teken en fade vonken
+        keys_to_delete = []
+        for key, value in list(self.sparkles.items()): # Gebruik list() om RuntimeError te voorkomen bij wijzigen tijdens iteratie
+            value -= 2 # Fade elke frame (snelheid van vervagen)
+            if value <= 0:
+                keys_to_delete.append(key)
+                continue
             
-            # Zorg ervoor dat de index binnen de geldige grenzen valt
-            if 0 <= idx < self.num_leds:
-                brightness_factor = (self.params.meteor_width - i) / self.params.meteor_width
-                r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
-                adjusted_r = int(r * brightness_factor)
-                adjusted_g = int(g * brightness_factor)
-                adjusted_b = int(b * brightness_factor)
-                rgbw = rgb_to_rgbw(adjusted_r, adjusted_g, adjusted_b)
-                
-                for k in range(4): # Iterate through R, G, B, W components
-                    frame[idx][k] = max(rgbw[k], frame[idx][k])
+            sparkle_brightness = value / self.max_sparkle_duration
+            sparkle_color_factor = brightness_factor * sparkle_brightness
+            
+            r = int(r_base * sparkle_color_factor)
+            g = int(g_base * sparkle_color_factor)
+            b = int(b_base * sparkle_color_factor)
+            
+            # Zorg ervoor dat de vonk geen helderder deel van de meteoor overschrijft
+            if 0 <= key < self.num_leds and (frame[key][0] < r or sum(frame[key][:3]) == 0):
+                frame[key] = rgb_to_rgbw(r, g, b)
 
-        # Teken vonken op het frame (op basis van hun huidige intensiteit)
-        for spark_data in self.sparks:
-            s_pos, s_color_rgbw, s_intensity = spark_data
-            if 0 <= s_pos < self.num_leds:
-                intensity_factor = s_intensity / self.sparkle_brightness
-                adjusted_spark_color = [int(c * intensity_factor) for c in s_color_rgbw]
-                for k in range(4):
-                    frame[s_pos][k] = max(frame[s_pos][k], adjusted_spark_color[k])
+            self.sparkles[key] = value # Update de resterende levensduur
 
+        # Verwijder vonken die volledig zijn vervaagd
+        for key in keys_to_delete:
+            if key in self.sparkles:
+                del self.sparkles[key]
 
-        # Pas de algemene helderheid van de parameters toe op het hele frame
-        brightness_mod = self.params.brightness / 100
-        final_frame = []
-        for rgbw_color in frame:
-            r, g, b, w = rgbw_color
-            adjusted_r = int(r * brightness_mod)
-            adjusted_g = int(g * brightness_mod)
-            adjusted_b = int(b * brightness_mod)
-            adjusted_w = int(w * brightness_mod) # Pas ook toe op wit component
-            final_frame.append([adjusted_r, adjusted_g, adjusted_b, adjusted_w])
-
-        return final_frame
+        return frame

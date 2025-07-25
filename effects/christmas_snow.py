@@ -1,140 +1,100 @@
 # P1-Visualizer/effects/christmas_snow.py
+
 import random
-import time # Importeer time voor last_frame_time
 from .base_effect import Effects
-from .schemas import ChristmasSnowParams
+from .schemas import EffectModel, ChristmasSnowParams
 from .converts import rgb_to_rgbw
 
-
 class ChristmasSnowEffect(Effects):
-    params: ChristmasSnowParams
-    star_density: int = 20
-    fade_speed: int = 30 # Verhoogde fade snelheid voor snellere vervaging
-    sparkle_brightness: int = 255
-    bg_r: int = 0
-    bg_g: int = 30 # Donkerdere groene achtergrond voor een kerstsfeer
-    bg_b: int = 0
-    led_states: list[list[int] | int] = [] # Lijst om (kleur, type) voor elke LED bij te houden
-
-    def __init__(self, model):
+    """
+    Een effect dat vallende sneeuwvlokken simuleert, met optionele rode en donkergroene lichten
+    voor een kerstsfeer.
+    """
+    def __init__(self, model: EffectModel):
         super().__init__(model)
-        # Initialiseer de parameters van het effect op basis van het model
-        self.params = model.params
-        self.num_leds = model.num_leds
-        self.fps = model.fps
-        self.fade_speed = 30 # Consistent met de klasse variabele
-        # Achtergrondkleur (donkergroen, geen wit component in RGBW)
-        self.bg_r = 0
-        self.bg_g = 30 # Consistent met de klasse variabele
-        self.bg_b = 0
-        self.sparkle_brightness = 255 # Helderheid van de vonken
-        self.star_density = self.params.red_chance + self.params.dark_green_chance # Gebruik density van params
+        # Type checking for parameters
+        if not isinstance(self.params, ChristmasSnowParams):
+            raise ValueError("Parameters for ChristmasSnowEffect must be of type ChristmasSnowParams")
 
-        self.last_frame_time = time.time()
-        self.led_states = [] # Lijst om (kleur, type) voor elke LED bij te houden
-        self._initialize_led_states() # Initialiseer de LED-toestanden bij de start
+        self.bg_r, self.bg_g, self.bg_b = 0, 120, 0 # Basis donkergroene achtergrond
+        self.sparkle_brightness = 255 # Maximale helderheid voor sneeuwvlokken
+        self.fade_speed = 10 # Snelheid waarmee sneeuwvlokken vervagen
+        self.star_density = 20 # Kans op een nieuwe sneeuwvlok (lager = minder)
+        self.led_states = [] # [ [r, g, b], type ] voor elke LED
+        self.current_frame = 0.0 # Initialiseer current_frame als float voor nauwkeurigere animatie
 
-    def _initialize_led_states(self):
-        """
-        Initialiseert of reset de interne staat van de LED's.
-        Elke LED krijgt een starttoestand: [RGB-kleur, type].
-        Type 0: achtergrondkleur (uitgegaan of vervaagd)
-        Type 1: rood vonk
-        Type 2: groen vonk
-        Type 3: wit vonk
-        """
-        self.led_states = []
-        for _ in range(self.num_leds):
-            self.led_states.append([[self.bg_r, self.bg_g, self.bg_b], 0]) # Initialiseer alle LED's als achtergrondkleur
+        self._on_num_leds_change() # Roep deze aan om de initiële LED-statussen in te stellen
 
-    def handle_green_red(self, color, led):
+    def _on_num_leds_change(self):
+        """Reset de status wanneer het aantal LEDs verandert."""
+        # Initialiseer alle LED's naar de achtergrondkleur en type 0 (geen actieve sneeuwvlok)
+        self.led_states = [[[self.bg_r, self.bg_g, self.bg_b], 0] for _ in range(self.num_leds)]
+
+    def handle_green_red(self, color, led_index):
         """
-        Verwerkt het vervagen van vonken terug naar de achtergrondkleur.
-        Zorgt ervoor dat kleuren correct vervagen naar de achtergrond.
+        Verwerkt het vervagen van rode en donkergroene lichten terug naar de achtergrondkleur.
         """
         r, g, b = color
+        # Vervaag kleuren geleidelijk terug naar de achtergrondkleur
+        red = max(self.bg_r, r - self.fade_speed) if r > self.bg_r else min(self.bg_r, r + self.fade_speed)
+        green = max(self.bg_g, g - self.fade_speed) if g > self.bg_g else min(self.bg_g, g + self.fade_speed)
+        blue = max(self.bg_b, b - self.fade_speed) if b > self.bg_b else min(self.bg_b, b + self.fade_speed)
         
-        # Bereken de stapgrootte voor vervaging gebaseerd op fade_speed
-        # Dit zorgt ervoor dat elke component naar zijn achtergrondwaarde beweegt.
-        # Voorkom delen door nul
-        red_step = (r - self.bg_r) / self.fade_speed if self.fade_speed > 0 else 0
-        green_step = (g - self.bg_g) / self.fade_speed if self.fade_speed > 0 else 0
-        blue_step = (b - self.bg_b) / self.fade_speed if self.fade_speed > 0 else 0
+        self.led_states[led_index][0] = [red, green, blue] # Update de kleur in de staat
 
-        # Pas de stap toe
-        red = int(r - red_step)
-        green = int(g - green_step)
-        blue = int(b - blue_step)
-
-        # Zorg ervoor dat de kleuren niet voorbij de achtergrondwaarde gaan
-        red = max(self.bg_r, red) if r > self.bg_r else min(self.bg_r, red)
-        green = max(self.bg_g, green) if g > self.bg_g else min(self.bg_g, green)
-        blue = max(self.bg_b, blue) if b > self.bg_b else min(self.bg_b, blue)
-
-        self.led_states[led][0] = [red, green, blue] # Update de kleur van de LED
-
-        # Als de kleur dicht genoeg bij de achtergrondkleur is, reset dan naar achtergrondtype
-        # Gebruik een kleine drempel om floating point afrondingsfouten te voorkomen
-        if (
-            abs(red - self.bg_r) < 10 # Gebruik een kleine drempel (aangepast van 5 naar 10)
-            and abs(green - self.bg_g) < 10
-            and abs(blue - self.bg_b) < 10
-        ):
-            self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0] # Reset naar achtergrondtoestand
+        # Als de kleur dicht genoeg bij de achtergrond is, reset dan de staat
+        if abs(red - self.bg_r) < 10 and abs(green - self.bg_g) < 10 and abs(blue - self.bg_b) < 10:
+            self.led_states[led_index] = [[self.bg_r, self.bg_g, self.bg_b], 0]
         return red, green, blue
 
     def get_next_frame(self):
-        # Controleer of het aantal LED's is gewijzigd en initialiseer opnieuw indien nodig
-        if len(self.led_states) != self.num_leds:
-            self._initialize_led_states()
-
+        """
+        Retourneert het volgende frame voor het Christmas Snow effect.
+        """
         frame = []
+        
+        # Update de frame teller
+        # Dit zorgt voor de animatie van de sneeuwval
+        self.current_frame += (self.fps / 33.0) * 1.0 # Pas de snelheid aan op basis van FPS
 
-        # Update de star_density van de parameters
-        # De som van red_chance en dark_green_chance bepaalt de totale dichtheid van nieuwe vonken.
-        self.star_density = self.params.red_chance + self.params.dark_green_chance
+        for led_index in range(self.num_leds):
+            color, light_type = self.led_states[led_index]
 
-        for led in range(self.num_leds):
-            color, type = self.led_states[led] # Haal de huidige kleur en type van de LED op
-            
-            # Bepaal de basiskleur voor de huidige LED
-            if type == 0: # Achtergrondkleur
+            if light_type == 0: # Als het een 'lege' (achtergrond) LED is
                 red, green, blue = self.bg_r, self.bg_g, self.bg_b
-            else: # Vonk die vervaagt
-                red, green, blue = self.handle_green_red(color, led)
+            else: # Als het een actieve sneeuwvlok of kerstlicht is
+                red, green, blue = self.handle_green_red(color, led_index)
 
-            # Als de LED in achtergrondtoestand is (type 0) en een willekeurige kans treedt op,
-            # initialiseer dan een nieuwe vonk.
-            if self.led_states[led][1] == 0 and random.randint(0, 100) < self.star_density:
-                # Definieer de mogelijke vonkkleuren met hun types
-                red_color = [[self.sparkle_brightness, 0, 0], 1] # Helder rood
-                bright_green_sparkle = [0, self.sparkle_brightness, 0] # Helder groen
-                green_color = [bright_green_sparkle, 2] # Gebruik helder groen
-                white_color = [
-                    [self.sparkle_brightness, self.sparkle_brightness, self.sparkle_brightness],
-                    3, # Type 3 voor witte vonk
-                ]
+            # Nieuwe sneeuwvlokken genereren
+            # De kans is gebaseerd op star_density en de huidige frame
+            if self.led_states[led_index][1] == 0 and random.randint(0, 100) < self.star_density:
+                # Bepaal de kleuren voor de verschillende soorten lichten
+                # Faded green voor de achtergrond, rode en witte lichten voor kerst
+                faded_green = self.bg_g - random.randint(60, 120) # Maak donkergroen iets donkerder
+                red_color_state = [[self.sparkle_brightness, 0, 0], 1]
+                dark_green_color_state = [[0, faded_green, 0], 2]
+                white_color_state = [[self.sparkle_brightness, self.sparkle_brightness, self.sparkle_brightness], 3]
                 
-                # Bereken de kans voor witte vonken
-                # Zorg ervoor dat de som van kansen niet meer dan 100 is
-                white_chance = max(0, 100 - self.params.red_chance - self.params.dark_green_chance)
+                # Bereken de kans voor wit, zodat de som van de kansen 100 is
+                white_chance = 100 - self.params.red_chance - self.params.dark_green_chance
+                if white_chance < 0: white_chance = 0 # Zorg voor een niet-negatieve kans
 
-                # Kies willekeurig een vonkkleur op basis van de ingestelde kansen
-                self.led_states[led] = random.choices(
-                    [red_color, green_color, white_color],
-                    weights=[self.params.red_chance, self.params.dark_green_chance, white_chance],
-                )[0]
-                # Update de huidige kleur en type van de LED naar de zojuist gekozen vonk
-                red, green, blue = self.led_states[led][0]
-                type = self.led_states[led][1]
+                try:
+                    # Kies willekeurig een kleur op basis van de ingestelde kansen
+                    self.led_states[led_index] = random.choices(
+                        [red_color_state, dark_green_color_state, white_color_state],
+                        weights=[self.params.red_chance, self.params.dark_green_chance, white_chance],
+                    )[0]
+                except ValueError: # Vang de fout op als alle gewichten nul zijn
+                       self.led_states[led_index] = [[self.bg_r, self.bg_g, self.bg_b], 0] # Val terug op achtergrond
 
-            # Pas de helderheid van het effect toe
-            brightness_mod = self.params.brightness / 100
+            # Pas de globale helderheid toe
+            brightness_mod = self.params.brightness / 100.0
             adjusted_red = int(red * brightness_mod)
             adjusted_green = int(green * brightness_mod)
             adjusted_blue = int(blue * brightness_mod)
-
-            # Converteer de RGB-kleur naar RGBW en voeg toe aan het frame
-            red, green, blue, white = rgb_to_rgbw(adjusted_red, adjusted_green, adjusted_blue)
-            frame.append([red, green, blue, white])
+            
+            # Converteer naar RGBW en voeg toe aan het frame
+            r, g, b, w = rgb_to_rgbw(adjusted_red, adjusted_green, adjusted_blue)
+            frame.append([r, g, b, w])
         return frame
