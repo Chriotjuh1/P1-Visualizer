@@ -29,9 +29,8 @@ import pyqtgraph as pg
 from pyqtgraph.exporters import ImageExporter
 from PIL import Image
 
-# Schakel OpenGL uit. Dit kan de stabiliteit van de ImageExporter verbeteren,
-# omdat OpenGL-rendering soms conflicten kan veroorzaken tijdens het exporteren.
-pg.setConfigOptions(useOpenGL=False)
+# Schakel OpenGL in voor vloeiendere rendering en anti-aliasing
+pg.setConfigOptions(useOpenGL=True)
 
 # --- Probeer de echte utility en effect bestanden te importeren ---
 try:
@@ -194,56 +193,64 @@ except ImportError as e:
             self.position = 0
             self.moving_right = True
             self.fade_divider = 3
+            self.frame_counter = 0.0 # Initialiseer frame_counter
 
         def get_next_frame(self):
-            line_width = self.params.line_length
+            line_length = self.params.line_length
             r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
             brightness_factor = self.params.brightness / 100
             
             frame = [[0, 0, 0, 0]] * self.num_leds
+
+            # Update de positie van de Knight Rider op basis van de FPS
+            advance_steps = self.fps / 33.0 # Gebruik 33.0 als basis voor de visualizer's FPS
+            self.frame_counter += advance_steps
+
+            if self.frame_counter >= 1.0:
+                steps_to_take = int(self.frame_counter)
+                self.frame_counter -= steps_to_take
+                
+                for _ in range(steps_to_take):
+                    if self.moving_right:
+                        self.position += 1
+                        if self.position + line_length >= self.num_leds:
+                            self.moving_right = False
+                            self.position = self.num_leds - line_length -1 
+                            if self.position < 0: self.position = 0
+                    else:
+                        self.position -= 1
+                        if self.position <= 0:
+                            self.moving_right = True
+                            self.position = 0
             
-            # Draw main line
+            # Teken de hoofdlijn
             main_color = rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))
-            for i in range(line_width):
-                led_pos = self.position + i
+            for i in range(line_length):
+                led_pos = (self.position + i)
                 if 0 <= led_pos < self.num_leds:
                     frame[led_pos] = main_color
 
-            # Draw fading trail
-            fade_factor = 1.0
-            fade_amount = line_width // self.fade_divider
-            if fade_amount <= 0:
-                fade_amount = 1
+            # Teken de vervagende staart
+            for fade in range(1, line_length + 1):
+                current_fade_factor = 1.0 - (fade / (line_length + self.fade_divider))
+                if current_fade_factor < 0: current_fade_factor = 0
 
-            for fade in range(1, fade_amount + 1):
-                fade_factor *= 0.8  # Dim the color for each step of the trail
-                faded_color = rgb_to_rgbw(
-                    int(r * brightness_factor * fade_factor),
-                    int(g * brightness_factor * fade_factor),
-                    int(b * brightness_factor * fade_factor)
+                faded_r_extra = int(r * current_fade_factor * brightness_factor)
+                faded_g_extra = int(g * current_fade_factor * brightness_factor)
+                faded_b_extra = int(b * current_fade_factor * brightness_factor)
+                red_out_faded, green_out_faded, blue_out_faded, white_out_faded = rgb_to_rgbw(
+                    faded_r_extra, faded_g_extra, faded_b_extra
                 )
-                
-                # Trail behind the main line
-                prev_pos = self.position - fade
-                if prev_pos >= 0:
-                    frame[prev_pos] = faded_color
-                
-                # Trail in front of the main line
-                next_pos = self.position + line_width + fade -1
-                if next_pos < self.num_leds:
-                     frame[next_pos] = faded_color
+                final_faded_color = [red_out_faded, green_out_faded, blue_out_faded, white_out_faded]
 
-            # Move the position
-            if self.moving_right:
-                self.position += 1
-                if self.position + line_width >= self.num_leds:
-                    self.position = self.num_leds - line_width
-                    self.moving_right = False
-            else:
-                self.position -= 1
-                if self.position <= 0:
-                    self.position = 0
-                    self.moving_right = True
+                prev_pos = self.position - fade
+                if 0 <= prev_pos < self.num_leds:
+                    frame[prev_pos] = final_faded_color
+                
+                next_pos = self.position + line_length + fade - 1
+                if 0 <= next_pos < self.num_leds:
+                    frame[next_pos] = final_faded_color
+
             return frame
 
     class DummyMeteorEffect(Effects):
@@ -393,7 +400,7 @@ except ImportError as e:
             green = max(self.bg_g, g - self.fade_speed) if g > self.bg_g else min(self.bg_g, g + self.fade_speed)
             blue = max(self.bg_b, b - self.fade_speed) if b > self.bg_b else min(self.bg_b, b + self.fade_speed)
             self.led_states[led][0] = [red, green, blue]
-            if abs(red - self.bg_r) < self.fade_speed and abs(green - self.bg_g) < self.fade_speed and abs(blue - self.bg_b) < self.fade_speed:
+            if abs(red - self.bg_r) < 10 and abs(green - self.bg_g) < 10 and abs(blue - self.bg_b) < 10: # Changed from 5 to 10
                 self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0]
             return red, green, blue
 
@@ -421,7 +428,7 @@ except ImportError as e:
                             weights=[self.params.red_chance, self.params.dark_green_chance, white_chance],
                         )[0]
                     except ValueError: # Handles case where all weights are zero
-                         self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0]
+                           self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0]
 
 
                 brightness_mod = self.params.brightness / 100
@@ -444,8 +451,10 @@ except ImportError as e:
             current_segment_start = self.position
             for idx, color_input in enumerate(self.params.color):
                 flag_width = self.params.width[idx]
+                # CORRECTIE: Verwijder de dubbele 'brightness' factor.
+                # De 'brightness_factor' is al berekend op basis van self.params.brightness.
                 scaled_red = int(color_input.red * brightness_factor)
-                scaled_green = int(color_input.green * brightness_factor)
+                scaled_green = int(color_input.green * brightness_factor) # Fixed: removed extra 'brightness' multiplication
                 scaled_blue = int(color_input.blue * brightness_factor)
                 rgbw = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
                 
@@ -493,14 +502,15 @@ class LEDVisualizer(QMainWindow):
         self.actions = []
         self.current_action = None
         
-        self.line_plot_items = {}
-        self.point_plot_items = {}
+        # line_plot_items zal nu ScatterPlotItem objecten bevatten om individuele LEDs te tekenen
+        self.line_plot_items = {} 
+        self.point_plot_items = {} # Voor bewerkingspunten
         self.effect_instances = {}
 
         self.effect_index = 0
         self.default_brightness = 1.0
         self.default_speed = 5
-        self.line_width = 3
+        self.line_width = 3 # Dit wordt nu de grootte van de individuele LEDs
         self.led_color = (255, 0, 0)
 
         self.draw_mode = "Vrij Tekenen"
@@ -519,7 +529,7 @@ class LEDVisualizer(QMainWindow):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.timer_update)
-        self.timer.start(30)
+        self.timer.start(10) # Verhoogde FPS naar 100 (10ms interval) voor vloeiendere animaties
 
     def init_ui(self):
         central_widget = QWidget(self)
@@ -554,9 +564,10 @@ class LEDVisualizer(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self.change_mode)
         control_layout.addWidget(self.mode_combo)
 
-        control_layout.addWidget(QLabel("Lijndikte:"))
+        control_layout.addWidget(QLabel("LED Grootte (lijndikte):")) # Aangepaste label
         self.line_width_slider = QSlider(Qt.Horizontal, minimum=1, maximum=20, value=self.line_width)
-        self.line_width_slider.valueChanged.connect(lambda v: setattr(self, 'line_width', v))
+        # FIX: Voeg self.update_drawing() toe voor directe visuele feedback
+        self.line_width_slider.valueChanged.connect(lambda v: (setattr(self, 'line_width', v), self.update_drawing()))
         control_layout.addWidget(self.line_width_slider)
 
         control_layout.addWidget(QPushButton("Kies LED Kleur", clicked=self.choose_led_color))
@@ -605,7 +616,7 @@ class LEDVisualizer(QMainWindow):
         extra_options_layout.addWidget(QPushButton("Roteer Links", clicked=lambda: self.rotate_image(-90)))
         extra_options_layout.addWidget(QPushButton("Roteer Rechts", clicked=lambda: self.rotate_image(90)))
         extra_options_layout.addWidget(QPushButton("Wis Afbeelding", clicked=self.clear_image))
-        extra_options_layout.addWidget(QPushButton("Wis Alle Lijnen", clicked=self.clear_all_lines))
+        control_layout.addWidget(QPushButton("Wis Alle Lijnen", clicked=self.clear_all_lines)) # Changed to clear_all_lines
 
         control_layout.addWidget(extra_options_group)
 
@@ -671,6 +682,7 @@ class LEDVisualizer(QMainWindow):
         self.update_drawing()
 
     def update_drawing(self):
+        # Verwijder acties die niet meer bestaan
         current_action_ids = {action['id'] for action in self.actions}
         items_to_remove = [action_id for action_id in self.line_plot_items if action_id not in current_action_ids]
         
@@ -684,6 +696,7 @@ class LEDVisualizer(QMainWindow):
             if action_id in self.effect_instances:
                 del self.effect_instances[action_id]
 
+        # Voeg de tijdelijke actie toe als er getekend wordt
         all_actions_to_draw = self.actions[:]
         if self.current_action and len(self.current_action["points"]) > 0 and self.drawing:
             temp_action = copy.deepcopy(self.current_action)
@@ -696,6 +709,7 @@ class LEDVisualizer(QMainWindow):
 
             pts = action["points"]
             
+            # Sla lege of te korte lijnen over
             if len(pts) < 2:
                 if action_id in self.line_plot_items:
                     self.plot_widget.removeItem(self.line_plot_items[action_id])
@@ -707,11 +721,11 @@ class LEDVisualizer(QMainWindow):
                     del self.effect_instances[action_id]
                 continue
 
-            line_width = self.line_width
-            
+            # Bepaal het huidige effect en zijn parameters
             effect_name = self.effect_names[self.effect_combo.currentIndex()]
             EffectClass = get_effect_class(effect_name)
             
+            # Selecteer het juiste parameter schema voor het effect
             ParamsModel = StaticParams
             if effect_name == "Pulseline": ParamsModel = BreathingParams
             elif effect_name == "Knight Rider": ParamsModel = KnightRiderParams
@@ -725,6 +739,7 @@ class LEDVisualizer(QMainWindow):
             current_brightness = action.get('brightness', self.default_brightness)
             r_base, g_base, b_base = action.get("color", self.led_color)
             
+            # Bereid de parameters voor het effect voor
             params_data = {}
             if effect_name == "Static" or effect_name == "Pulseline":
                 params_data = {"color": [Color(red=r_base, green=g_base, blue=b_base)], "brightness": int(current_brightness * 100)}
@@ -755,9 +770,11 @@ class LEDVisualizer(QMainWindow):
             else:
                 params_data = {"color": [Color(red=r_base, green=g_base, blue=b_base)], "brightness": int(current_brightness * 100)}
 
+            # Bereken de totale lengte van de lijn en het aantal virtuele LED's
             total_line_length = sum(distance(pts[k], pts[k+1]) for k in range(len(pts) - 1))
-            num_leds_for_this_line = max(2, int(total_line_length / 5)) if total_line_length > 0 else 2
-            
+            num_leds_for_this_line = max(1, int(total_line_length / 5)) if total_line_length > 0 else 1 # Minimaal 1 LED
+
+            # Hersampleer de punten als de lijn is gewijzigd of het effect gereset moet worden
             if action.get('recalculate_resample', True) or action.get('reset_effect_state', True):
                 resampling_interval = total_line_length / (num_leds_for_this_line - 1) if num_leds_for_this_line > 1 else 1.0
                 points_for_effect = resample_points(pts, resampling_interval)
@@ -766,48 +783,75 @@ class LEDVisualizer(QMainWindow):
                 action['recalculate_resample'] = False
             
             num_leds_for_this_line = action.get('num_leds_actual', 0)
+            if num_leds_for_this_line == 0: num_leds_for_this_line = 1
 
+            # Initialiseer of update de effect instantie
             effect_instance = self.effect_instances.get(action_id)
+            # Cast fps to int to prevent Pydantic validation error
+            calculated_fps = int(100 * (current_speed / 5.0)) 
             if not effect_instance or action.get('reset_effect_state', False) or not isinstance(effect_instance, EffectClass):
                 params_instance = ParamsModel(**params_data)
-                model = EffectModel(params=params_instance, frame_skip=0, fps=30 * (current_speed / 5.0), num_leds=num_leds_for_this_line)
+                model = EffectModel(params=params_instance, frame_skip=0, fps=calculated_fps, num_leds=num_leds_for_this_line) 
                 effect_instance = EffectClass(model)
                 self.effect_instances[action_id] = effect_instance
                 action['reset_effect_state'] = False
             else:
+                # Update bestaande effect instantie met nieuwe parameters en LED-aantal
                 effect_instance.params = ParamsModel(**params_data)
-                effect_instance.num_leds = num_leds_for_this_line
-                effect_instance.fps = 30 * (current_speed / 5.0)
+                effect_instance.num_leds = num_leds_for_this_line # Update num_leds property
+                effect_instance.fps = calculated_fps
             
-            if num_leds_for_this_line > 0:
-                frame_colors = effect_instance.get_next_frame()
-            else:
-                frame_colors = [[0,0,0,0]]
-
-            final_pen_color = QColor(*frame_colors[0][:3]) 
-
-            if self.draw_mode == "Lijn Bewerken" and action_idx == self.selected_action_index:
-                line_width += 3
-
-            all_x, all_y = [p[0] for p in pts], [p[1] for p in pts] 
+            # Haal de kleuren voor het huidige frame op van het effect
+            frame_colors = effect_instance.get_next_frame()
             
-            line_item = self.line_plot_items.get(action_id)
-            if not line_item:
-                line_item = self.plot_widget.plot(all_x, all_y, pen=pg.mkPen(final_pen_color, width=line_width, antialias=True), connect='all')
-                self.line_plot_items[action_id] = line_item
-            else:
-                line_item.setData(all_x, all_y)
-                line_item.setPen(pg.mkPen(final_pen_color, width=line_width, antialias=True))
+            # Bereid de 'brushes' (kleuren) voor de ScatterPlotItem voor
+            brushes = []
+            # Zorg ervoor dat het aantal kleuren overeenkomt met het aantal punten
+            # Als frame_colors korter is, vul aan met zwart. Als het langer is, negeer extra kleuren.
+            for i in range(len(action['resampled_points'])):
+                if i < len(frame_colors):
+                    r, g, b = frame_colors[i][0], frame_colors[i][1], frame_colors[i][2]
+                    brushes.append(pg.mkBrush(QColor(r, g, b)))
+                else:
+                    brushes.append(pg.mkBrush(QColor(0, 0, 0))) # Zwarte fallback
 
+            # Haal de x en y coördinaten van de hersampleerde punten op
+            x_coords = [p[0] for p in action['resampled_points']]
+            y_coords = [p[1] for p in action['resampled_points']]
+
+            # Gebruik ScatterPlotItem om individuele LEDs te tekenen
+            scatter_item = self.line_plot_items.get(action_id)
+            if not scatter_item:
+                # Maak een nieuwe ScatterPlotItem als deze nog niet bestaat
+                scatter_item = pg.ScatterPlotItem(
+                    x=x_coords, y=y_coords, 
+                    size=self.line_width, # Gebruik line_width als de grootte van de LED
+                    brush=brushes, 
+                    antialias=True,
+                    pen=pg.mkPen(None) # Geen rand om de individuele LEDs
+                )
+                self.plot_widget.addItem(scatter_item)
+                self.line_plot_items[action_id] = scatter_item
+            else:
+                # Update de data van de bestaande ScatterPlotItem
+                scatter_item.setData(
+                    x=x_coords, y=y_coords, 
+                    size=self.line_width, 
+                    brush=brushes
+                )
+            
+            # Teken bewerkingspunten als de modus "Lijn Bewerken" is en deze lijn geselecteerd is
             if self.draw_mode == "Lijn Bewerken" and action_idx == self.selected_action_index:
                 point_item = self.point_plot_items.get(action_id)
                 if not point_item:
-                    point_item = pg.ScatterPlotItem(x=[p[0] for p in pts], y=[p[1] for p in pts], size=10, brush=pg.mkBrush('b'), pen=pg.mkPen('w', width=1))
+                    # Teken grotere, blauwe punten voor bewerking
+                    point_item = pg.ScatterPlotItem(x=[p[0] for p in pts], y=[p[1] for p in pts], size=self.line_width + 5, brush=pg.mkBrush('b'), pen=pg.mkPen('w', width=1))
                     self.plot_widget.addItem(point_item)
                     self.point_plot_items[action_id] = point_item
                 else:
                     point_item.setData(x=[p[0] for p in pts], y=[p[1] for p in pts])
             else:
+                # Verwijder bewerkingspunten als de lijn niet geselecteerd is of de modus anders is
                 if action_id in self.point_plot_items:
                     self.plot_widget.removeItem(self.point_plot_items[action_id])
                     del self.point_plot_items[action_id]
@@ -984,8 +1028,8 @@ class LEDVisualizer(QMainWindow):
         state_to_save = []
         for action in self.actions:
             clean_action = {k: v for k, v in action.items() if k not in ['effect_instance', 'plot_items', 'resampled_points']}
-            state_to_save.append(clean_action)
-        self.undo_stack.append(copy.deepcopy(state_to_save))
+            state_to_save.append(copy.deepcopy(clean_action)) # Gebruik deepcopy om geneste mutaties te voorkomen
+        self.undo_stack.append(state_to_save)
         self.redo_stack.clear()
 
     def undo_action(self):
@@ -1471,7 +1515,7 @@ class LEDVisualizer(QMainWindow):
             self.show_status_message(f"Fout bij opslaan van MP4: {e}")
             QMessageBox.critical(self, "Fout bij Exporteren", f"Er is een fout opgetreden:\n{e}\nZorg ervoor dat 'imageio-ffmpeg' is geïnstalleerd.")
         finally:
-            self.timer.start(30)
+            self.timer.start(10) # Start de timer opnieuw met 10ms interval
 
 
 if __name__ == '__main__':

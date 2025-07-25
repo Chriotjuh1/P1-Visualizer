@@ -76,9 +76,9 @@ class ChristmasSnowEffect(Effects):
         # Als de kleur dicht genoeg bij de achtergrondkleur is, reset dan naar achtergrondtype
         # Gebruik een kleine drempel om floating point afrondingsfouten te voorkomen
         if (
-            abs(red - self.bg_r) < 5 # Gebruik een kleine drempel
-            and abs(green - self.bg_g) < 5
-            and abs(blue - self.bg_b) < 5
+            abs(red - self.bg_r) < 10 # Gebruik een kleine drempel (aangepast van 5 naar 10)
+            and abs(green - self.bg_g) < 10
+            and abs(blue - self.bg_b) < 10
         ):
             self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0] # Reset naar achtergrondtoestand
         return red, green, blue
