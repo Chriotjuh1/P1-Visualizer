@@ -138,4 +138,3 @@ class ChristmasSnowEffect(Effects):
             red, green, blue, white = rgb_to_rgbw(adjusted_red, adjusted_green, adjusted_blue)
             frame.append([red, green, blue, white])
         return frame
-
