@@ -597,7 +597,8 @@ class LEDVisualizer(QMainWindow):
         extra_options_layout.addWidget(self.brightness_slider)
         
         extra_options_layout.addWidget(QLabel("Snelheid (globaal of per lijn):"))
-        self.speed_slider = QSlider(Qt.Horizontal, minimum=1, maximum=50, value=self.default_speed)
+        # Aangepast: Maximale waarde van de snelheidsschuifregelaar ingesteld op 5
+        self.speed_slider = QSlider(Qt.Horizontal, minimum=1, maximum=5, value=self.default_speed)
         self.speed_slider.valueChanged.connect(self.set_current_action_speed)
         extra_options_layout.addWidget(self.speed_slider)
         
