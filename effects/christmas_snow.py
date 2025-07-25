@@ -9,12 +9,12 @@ from .converts import rgb_to_rgbw
 class ChristmasSnowEffect(Effects):
     params: ChristmasSnowParams
     star_density: int = 20
-    fade_speed: int = 10
+    fade_speed: int = 30 # Verhoogde fade snelheid voor snellere vervaging
     sparkle_brightness: int = 255
     bg_r: int = 0
-    bg_g: int = 120
+    bg_g: int = 30 # Donkerdere groene achtergrond voor een kerstsfeer
     bg_b: int = 0
-    led_states: list[list[int] | int] = [] # Deze type hint is niet helemaal correct voor de inhoud, maar functioneel
+    led_states: list[list[int] | int] = [] # Lijst om (kleur, type) voor elke LED bij te houden
 
     def __init__(self, model):
         super().__init__(model)
@@ -22,10 +22,10 @@ class ChristmasSnowEffect(Effects):
         self.params = model.params
         self.num_leds = model.num_leds
         self.fps = model.fps
-        self.fade_speed = 10 # Hoe snel een vonk vervaagt
+        self.fade_speed = 30 # Consistent met de klasse variabele
         # Achtergrondkleur (donkergroen, geen wit component in RGBW)
         self.bg_r = 0
-        self.bg_g = 120
+        self.bg_g = 30 # Consistent met de klasse variabele
         self.bg_b = 0
         self.sparkle_brightness = 255 # Helderheid van de vonken
         self.star_density = self.params.red_chance + self.params.dark_green_chance # Gebruik density van params
@@ -49,36 +49,36 @@ class ChristmasSnowEffect(Effects):
 
     def handle_green_red(self, color, led):
         """
-        Verwerkt het vervagen van rode/groene/witte vonken terug naar de achtergrondkleur.
+        Verwerkt het vervagen van vonken terug naar de achtergrondkleur.
+        Zorgt ervoor dat kleuren correct vervagen naar de achtergrond.
         """
         r, g, b = color
+        
+        # Bereken de stapgrootte voor vervaging gebaseerd op fade_speed
+        # Dit zorgt ervoor dat elke component naar zijn achtergrondwaarde beweegt.
+        # Voorkom delen door nul
+        red_step = (r - self.bg_r) / self.fade_speed if self.fade_speed > 0 else 0
+        green_step = (g - self.bg_g) / self.fade_speed if self.fade_speed > 0 else 0
+        blue_step = (b - self.bg_b) / self.fade_speed if self.fade_speed > 0 else 0
 
-        # Vervaag rood
-        red = (
-            max(self.bg_r, r - self.fade_speed)
-            if r > self.bg_r
-            else min(self.bg_r, r + self.fade_speed)
-        )
-        # Vervaag groen
-        green = (
-            max(self.bg_g, g - self.fade_speed)
-            if g > self.bg_g
-            else min(self.bg_g, g + self.fade_speed)
-        )
-        # Vervaag blauw
-        blue = (
-            max(self.bg_b, b - self.fade_speed)
-            if b > self.bg_b
-            else min(self.bg_b, b + self.fade_speed)
-        )
+        # Pas de stap toe
+        red = int(r - red_step)
+        green = int(g - green_step)
+        blue = int(b - blue_step)
+
+        # Zorg ervoor dat de kleuren niet voorbij de achtergrondwaarde gaan
+        red = max(self.bg_r, red) if r > self.bg_r else min(self.bg_r, red)
+        green = max(self.bg_g, green) if g > self.bg_g else min(self.bg_g, green)
+        blue = max(self.bg_b, blue) if b > self.bg_b else min(self.bg_b, blue)
 
         self.led_states[led][0] = [red, green, blue] # Update de kleur van de LED
 
         # Als de kleur dicht genoeg bij de achtergrondkleur is, reset dan naar achtergrondtype
+        # Gebruik een kleine drempel om floating point afrondingsfouten te voorkomen
         if (
-            abs(red - self.bg_r) < self.fade_speed
-            and abs(green - self.bg_g) < self.fade_speed
-            and abs(blue - self.bg_b) < self.fade_speed
+            abs(red - self.bg_r) < 5 # Gebruik een kleine drempel
+            and abs(green - self.bg_g) < 5
+            and abs(blue - self.bg_b) < 5
         ):
             self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0] # Reset naar achtergrondtoestand
         return red, green, blue
@@ -91,6 +91,7 @@ class ChristmasSnowEffect(Effects):
         frame = []
 
         # Update de star_density van de parameters
+        # De som van red_chance en dark_green_chance bepaalt de totale dichtheid van nieuwe vonken.
         self.star_density = self.params.red_chance + self.params.dark_green_chance
 
         for led in range(self.num_leds):
@@ -105,14 +106,13 @@ class ChristmasSnowEffect(Effects):
             # Als de LED in achtergrondtoestand is (type 0) en een willekeurige kans treedt op,
             # initialiseer dan een nieuwe vonk.
             if self.led_states[led][1] == 0 and random.randint(0, 100) < self.star_density:
-                faded_green = self.bg_g - random.randint(60, 120) # Maak een donkerdere groene tint voor groene vonk
-
                 # Definieer de mogelijke vonkkleuren met hun types
-                red_color = [[self.sparkle_brightness, 0, 0], 1]
-                green_color = [[0, faded_green, 0], 2]
+                red_color = [[self.sparkle_brightness, 0, 0], 1] # Helder rood
+                bright_green_sparkle = [0, self.sparkle_brightness, 0] # Helder groen
+                green_color = [bright_green_sparkle, 2] # Gebruik helder groen
                 white_color = [
                     [self.sparkle_brightness, self.sparkle_brightness, self.sparkle_brightness],
-                    3,
+                    3, # Type 3 voor witte vonk
                 ]
                 
                 # Bereken de kans voor witte vonken
