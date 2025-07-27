@@ -1554,6 +1554,9 @@ class LEDVisualizer(QMainWindow):
             self.set_effect_specific_param(param_name, new_rgb)
 
     def set_effect_specific_param(self, param_name, value):
+        # Update self.current_global_effect_params based on the specific parameter being changed
+        # This part correctly handles updating the global state for sliders/color pickers
+        # that are not tied to a specific selected line.
         if param_name.startswith("color_"):
             color_idx = int(param_name.split('_')[1])
             if 'color' not in self.current_global_effect_params or not isinstance(self.current_global_effect_params['color'], list):
@@ -1571,28 +1574,67 @@ class LEDVisualizer(QMainWindow):
         else:
             self.current_global_effect_params[param_name] = value
 
-        actions_to_update = []
-        
+        # Determine which actions need to be updated
+        actions_to_modify = []
         if self.selected_action_index != -1:
-            actions_to_update.append(self.actions[self.selected_action_index])
-            self.show_status_message(f"Parameter '{param_name}' of selected line set to: {value}")
+            actions_to_modify.append(self.actions[self.selected_action_index])
+            self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
         elif self.drawing and self.current_action:
-            actions_to_update.append(self.current_action)
-            self.show_status_message(f"Parameter '{param_name}' of drawing line set to: {value}")
+            actions_to_modify.append(self.current_action)
+            self.show_status_message(f"Parameter '{param_name}' van tekenende lijn ingesteld op: {value}")
         else:
-            actions_to_update = self.actions
-            self.show_status_message(f"Global parameter '{param_name}' set to: {value} for all lines.")
+            # Global update: apply to all existing actions
+            actions_to_modify = self.actions
+            self.show_status_message(f"Globale parameter '{param_name}' ingesteld op: {value} voor alle lijnen.")
 
-        if not actions_to_update:
+        if not actions_to_modify:
             self.update_drawing()
             return
 
-        for target_action in actions_to_update:
+        for target_action in actions_to_modify:
+            # Altijd de effectnaam instellen op de huidige selectie uit de keuzelijst
             target_action['effect_name'] = self.effect_combo.currentText()
-            target_action.update(copy.deepcopy(self.current_global_effect_params))
+            
+            # Update de specifieke parameter die wordt gewijzigd
+            # Dit is de belangrijke wijziging: update alleen de *specifieke* parameter
+            # die deze functieaanroep heeft geactiveerd.
+            if param_name.startswith("color_"):
+                # Als een specifieke kleurcomponent wordt gewijzigd (bijv. color_0 voor Vlag)
+                if target_action['effect_name'] == "Flag":
+                    if 'color' not in target_action or not isinstance(target_action['color'], list):
+                        target_action['color'] = [(255,255,255)] * 3 # Initialiseer indien niet aanwezig
+                    while len(target_action['color']) <= color_idx:
+                        target_action['color'].append((255,255,255))
+                    target_action['color'][color_idx] = value
+                else:
+                    # Voor effecten met één kleur, update direct de hoofdkleur
+                    # Dit zou idealiter worden afgehandeld door choose_led_color, maar voor robuustheid
+                    target_action['color'] = value # Aannemende dat 'value' een (R,G,B) tuple is
+            elif param_name == "background_color":
+                target_action['background_color'] = value
+            elif param_name == "color": # Dit is voor de hoofd LED kleurkiezer (choose_led_color roept deze niet aan met 'color')
+                 # Deze tak zou alleen geactiveerd moeten worden als 'param_name' daadwerkelijk 'color' is.
+                 # De 'choose_led_color' functie handelt dit al direct af op de 'actions' lijst.
+                 # Dus, in de praktijk zal deze tak zelden of nooit worden uitgevoerd door UI-interactie met sliders.
+                 target_action['color'] = value
+            elif param_name.startswith("width_"): # Voor Vlag breedtes
+                width_idx = int(param_name.split('_')[1])
+                if 'width' not in target_action or not isinstance(target_action['width'], list):
+                    target_action['width'] = [10] * 3
+                while len(target_action['width']) <= width_idx:
+                    target_action['width'].append(10)
+                target_action['width'][width_idx] = value
+            else:
+                # Voor niet-kleur, niet-breedte parameters (zoals line_length, meteor_width, brightness, speed)
+                # Update direct de target_action met de waarde.
+                target_action[param_name] = value
+
+            # Altijd markeren voor reset en herberekening
             target_action['reset_effect_state'] = True
+            target_action['recalculate_resample'] = True # Zorgt voor resampling indien nodig (bijv. line_length verandert)
 
         self.update_drawing()
+
 
     def update_effect_parameters_ui(self):
         for i in reversed(range(self.effect_params_layout.count())):
@@ -1612,7 +1654,8 @@ class LEDVisualizer(QMainWindow):
 
         if selected_effect_name == "Knight Rider":
             default_val = params_to_display.get('line_length', 10) 
-            slider = self._add_slider("Line Length", "line_length", 1, 50, default_val)
+            # Aangepast: Verhoogd maximum van 50 naar 100 voor 'Line Length'
+            slider = self._add_slider("Line Length", "line_length", 1, 100, default_val) 
             slider.blockSignals(True); slider.setValue(default_val); slider.blockSignals(False)
         
         elif selected_effect_name == "Meteor":
@@ -1626,7 +1669,7 @@ class LEDVisualizer(QMainWindow):
         
         elif selected_effect_name == "Running Line":
             default_line_width = params_to_display.get('line_width', 5)
-            slider_line_width = self._add_slider("Line Width", "line_width", 1, 20, default_line_width)
+            slider_line_width = self._add_slider("Line Width", "line_width", 1, 50, default_line_width) 
             slider_line_width.blockSignals(True); slider_line_width.setValue(default_line_width); slider_line_width.blockSignals(False)
 
             default_num_lines = params_to_display.get('number_of_lines', 3)
@@ -1667,6 +1710,7 @@ class LEDVisualizer(QMainWindow):
             bg_button = self._add_color_picker("Background Color", "background_color")
             bg_color_rgb = params_to_display.get('background_color', (0,0,0))
             bg_button.setStyleSheet(f"background-color: rgb({bg_color_rgb[0]},{bg_color_rgb[1]},{bg_color_rgb[2]});")
+
 
 
    
