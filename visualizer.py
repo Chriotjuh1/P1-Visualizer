@@ -33,6 +33,28 @@ from PIL import Image
 # Enable OpenGL for smoother rendering and anti-aliasing
 pg.setConfigOptions(useOpenGL=True)
 
+# Definieer de correcte RGB naar RGBW conversiefunctie globaal
+# Deze functie zal nu door alle effecten en voor de uiteindelijke weergave worden gebruikt.
+def rgb_to_rgbw(r, g, b):
+    r, g, b = int(r), int(g), int(b) # Zorg ervoor dat het integers zijn
+
+    # Vind de minimale waarde van R, G, B om de witte component te bepalen
+    white = min(r, g, b)
+
+    # Trek de witte component af van R, G, B om de resterende RGB-waarden te krijgen
+    r_out = r - white
+    g_out = g - white
+    b_out = b - white
+
+    # Zorg ervoor dat de waarden binnen het 0-255 bereik blijven
+    r_out = max(0, min(255, r_out))
+    g_out = max(0, min(255, g_out))
+    b_out = max(0, min(255, b_out))
+    white = max(0, min(255, white)) # Zorg ervoor dat wit ook binnen bereik is
+
+    return r_out, g_out, b_out, white
+
+
 # --- Try to import the actual utility and effect files ---
 try:
     # IMPORTANT NOTE: Make sure the 'effects' folder is a valid Python package
@@ -56,7 +78,7 @@ try:
     from effects.static import StaticEffect # Adjusted import path
     
     from utils import distance, resample_points, smooth_points, point_line_distance # Adjusted import path
-    from effects.converts import rgb_to_rgbw # Adjusted import path
+    # We importeren nu GEEN rgb_to_rgbw uit effects.converts, we gebruiken de lokale versie.
     print("INFO: Actual 'utils' and 'effects' modules loaded.")
 
     # Mapping of effect names to their classes
@@ -102,7 +124,7 @@ except ImportError as e:
         t = max(0, min(1, (((point[0] - p1[0]) * (p2[0] - p1[0])) + ((point[1] - p1[1]) * (p2[1] - p1[1]))) / line_length_sq))
         closest_point = (p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1]))
         return distance(point, closest_point)
-    def rgb_to_rgbw(r, g, b): return int(r), int(g), int(b), 0 # Ensure they are integers
+    # De rgb_to_rgbw functie is nu globaal gedefinieerd, dus hoeft hier niet opnieuw.
     
     # Dummy classes for effects and schemas
     class Color:
@@ -138,7 +160,7 @@ except ImportError as e:
             self.fps = model.fps
             self._num_leds = model.num_leds
             self._on_num_leds_change()
-            self.current_frame = 0.0 # Initialize current_frame in the base class
+            self.current_frame = 0.0 # Initialiseer current_frame als float voor nauwkeurigere animatie
 
         @property
         def num_leds(self):
@@ -161,7 +183,8 @@ except ImportError as e:
         def get_next_frame(self):
             r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
             brightness_factor = self.params.brightness / 100.0
-            return [[int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor), 0]] * self.num_leds
+            # Gebruik de globale rgb_to_rgbw functie
+            return [[*rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))]] * self.num_leds
     
     class DummyBreathingEffect(Effects):
         def __init__(self, model):
@@ -187,6 +210,7 @@ except ImportError as e:
             r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
             r_breath, g_breath, b_breath = r * normalized_factor, g * normalized_factor, b * normalized_factor
             red, green, blue = int(r_breath * brightness), int(g_breath * brightness), int(b_breath * brightness)
+            # Gebruik de globale rgb_to_rgbw functie
             red, green, blue, white = rgb_to_rgbw(red, green, blue)
             return [[red, green, blue, white]] * self.num_leds
 
@@ -227,6 +251,7 @@ except ImportError as e:
                             self.position = 0
             
             # Draw the main line
+            # Gebruik de globale rgb_to_rgbw functie
             main_color = rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))
             for i in range(line_length):
                 led_pos = (self.position + i)
@@ -241,6 +266,7 @@ except ImportError as e:
                 faded_r_extra = int(r * current_fade_factor * brightness_factor)
                 faded_g_extra = int(g * current_fade_factor * brightness_factor)
                 faded_b_extra = int(b * current_fade_factor * brightness_factor)
+                # Gebruik de globale rgb_to_rgbw functie
                 red_out_faded, green_out_faded, blue_out_faded, white_out_faded = rgb_to_rgbw(
                     faded_r_extra, faded_g_extra, faded_b_extra
                 )
@@ -316,6 +342,7 @@ except ImportError as e:
                     r = int(r_base * brightness_factor)
                     g = int(g_base * brightness_factor)
                     b = int(b_base * brightness_factor)
+                    # Gebruik de globale rgb_to_rgbw functie
                     frame[led_index] = rgb_to_rgbw(r, g, b)
 
             # Draw and fade sparks
@@ -335,6 +362,7 @@ except ImportError as e:
                 
                 # Ensure the spark does not overwrite a brighter part of the meteor
                 if 0 <= key < self.num_leds and (frame[key][0] < r or frame[key][1] < g or frame[key][2] < b):
+                    # Gebruik de globale rgb_to_rgbw functie
                     frame[key] = rgb_to_rgbw(r, g, b)
 
                 self.sparkles[key] = value
@@ -360,6 +388,7 @@ except ImportError as e:
             red = int(red_hsv * 255 * brightness_factor)
             green = int(green_hsv * 255 * brightness_factor)
             blue = int(blue_hsv * 255 * brightness_factor)
+            # Gebruik de globale rgb_to_rgbw functie
             return [rgb_to_rgbw(red, green, blue)] * self.num_leds
 
     class DummyRunningLineEffect(Effects):
@@ -375,25 +404,37 @@ except ImportError as e:
             fg_r = self.params.color[0].red
             fg_g = self.params.color[0].green
             fg_b = self.params.color[0].blue
+            brightness_factor = self.params.brightness / 100.0
 
+            # Gebruik de globale rgb_to_rgbw functie
             bg_rgbw = rgb_to_rgbw(bg_r, bg_g, bg_b)
-            fg_rgbw = rgb_to_rgbw(fg_r, fg_g, fg_b)
+            fg_rgbw = rgb_to_rgbw(
+                int(fg_r * brightness_factor),
+                int(fg_g * brightness_factor),
+                int(fg_b * brightness_factor)
+            )
 
             frame = [bg_rgbw] * self.num_leds
             
             if self.params.number_of_lines > 0:
                 # IMPORTANT: Integer division here. If self.num_leds is small and self.params.number_of_lines is large,
                 # 'gap' can become 0, causing lines to overlap.
-                gap = self.num_leds // self.params.number_of_lines
-                # print(f"DEBUG (Running Line): num_leds: {self.num_leds}, number_of_lines: {self.params.number_of_lines}, calculated gap: {gap}")
+                spacing = self.num_leds / self.params.number_of_lines if self.params.number_of_lines > 0 else self.num_leds
+
+                # Update de frame teller
+                self.current_frame += (self.fps / 33.0) * 0.5 # Pas de snelheid aan op basis van FPS
+
                 for i in range(self.params.number_of_lines):
-                    current_gap = gap * i
-                    for width in range(line_width):
-                        idx = (self.pos + current_gap + width) % self.num_leds
-                        if 0 <= idx < self.num_leds: # Ensure index is within bounds
+                    # Bereken de startpositie van de huidige lijn, rekening houdend met de animatie
+                    # en de spacing tussen de lijnen.
+                    start_pos = int((self.current_frame + i * spacing)) % self.num_leds
+
+                    # Teken de lijn
+                    for width_offset in range(line_width):
+                        idx = (start_pos + width_offset) % self.num_leds
+                        if 0 <= idx < self.num_leds: # Dubbele controle voor de zekerheid
                             frame[idx] = fg_rgbw
             
-            self.pos = (self.pos + 1) % self.num_leds
             return frame
 
     class DummyChristmasSnowEffect(Effects):
@@ -450,6 +491,7 @@ except ImportError as e:
                 adjusted_green = int(green * brightness_mod)
                 adjusted_blue = int(blue * brightness_mod)
                 
+                # Gebruik de globale rgb_to_rgbw functie
                 r, g, b, w = rgb_to_rgbw(adjusted_red, adjusted_green, adjusted_blue)
                 frame.append([r, g, b, w])
             return frame
@@ -457,26 +499,55 @@ except ImportError as e:
     class DummyFlagEffect(Effects):
         def __init__(self, model):
             super().__init__(model)
-            self.position = 0
+            # self.position = 0 # No longer needed, use self.current_frame from base
+            # Ensure current_frame is initialized as float in base Effects class, which it is.
+
         def get_next_frame(self):
             frame = [[0, 0, 0, 0]] * self.num_leds
             brightness_factor = self.params.brightness / 100
             
-            current_segment_start = self.position
-            for idx, color_input in enumerate(self.params.color):
-                flag_width = self.params.width[idx]
-                # CORRECTION: Remove the double 'brightness' factor.
-                # The 'brightness_factor' is already calculated based on self.params.brightness.
-                scaled_red = int(color_input.red * brightness_factor)
-                scaled_green = int(color_input.green * brightness_factor) 
-                scaled_blue = int(color_input.blue * brightness_factor)
-                rgbw = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
+            # Update the frame counter based on FPS.
+            # De snelheid van de vlagbeweging is nu direct gekoppeld aan self.fps
+            # Deel door een kleinere waarde (bijv. 10.0) om het sneller te maken.
+            advance_steps = self.fps / 10.0 # Aangepast: kleinere deler voor snellere beweging
+            self.current_frame += advance_steps
+
+            # Ensure current_frame wraps around num_leds for continuous loop
+            current_base_position = int(self.current_frame) % self.num_leds
+
+            # Calculate the total width of the flag pattern.
+            total_flag_pattern_width = sum(self.params.width)
+
+            for led_idx in range(self.num_leds):
+                # Calculate the effective position within the repeating flag pattern
+                # This position shifts based on `current_base_position`
+                effective_pattern_pos = (led_idx - current_base_position + self.num_leds * 2) % total_flag_pattern_width
                 
-                for led_offset in range(flag_width):
-                    index = (current_segment_start + led_offset) % self.num_leds
-                    frame[index] = rgbw
-                current_segment_start = (current_segment_start + flag_width) % self.num_leds
-            self.position = (self.position + 1) % self.num_leds
+                # Find which color segment this effective_pattern_pos falls into
+                segment_start_offset = 0
+                found_color = None
+                for idx, width in enumerate(self.params.width):
+                    if effective_pattern_pos >= segment_start_offset and effective_pattern_pos < segment_start_offset + width:
+                        color_input = self.params.color[idx]
+                        scaled_red = int(color_input.red * brightness_factor)
+                        scaled_green = int(color_input.green * brightness_factor) 
+                        scaled_blue = int(color_input.blue * brightness_factor)
+                        # Gebruik de globale rgb_to_rgbw functie
+                        found_color = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
+                        break
+                    segment_start_offset += width
+                
+                if found_color:
+                    frame[led_idx] = found_color
+                else:
+                    # If no segment color found (e.g., due to rounding or gaps, though should not happen with proper widths)
+                    # or if it's the background part
+                    bg_r = self.params.background_color.red
+                    bg_g = self.params.background_color.green
+                    bg_b = self.params.background_color.blue
+                    # Gebruik de globale rgb_to_rgbw functie
+                    frame[led_idx] = rgb_to_rgbw(bg_r, bg_g, bg_b)
+        
             return frame
 
     # Dummy get_effect_class function
@@ -886,12 +957,12 @@ class LEDVisualizer(QMainWindow):
 
                 
                 # Ensure all colors in frame_colors are 4-element (R, G, B, W)
-                # This handles cases where external effect modules might return 3-element (R, G, B)
                 processed_frame_colors = []
                 for color_tuple in frame_colors:
                     if len(color_tuple) == 3:
-                        # Convert RGB to RGBW using the local rgb_to_rgbw
-                        processed_frame_colors.append(rgb_to_rgbw(color_tuple[0], color_tuple[1], color_tuple[2]))
+                        # Convert RGB to RGBW using the global rgb_to_rgbw
+                        r, g, b, w = rgb_to_rgbw(color_tuple[0], color_tuple[1], color_tuple[2])
+                        processed_frame_colors.append((r, g, b, w))
                     elif len(color_tuple) == 4:
                         processed_frame_colors.append(color_tuple)
                     else:
@@ -900,15 +971,25 @@ class LEDVisualizer(QMainWindow):
 
 
                 # --- GLOW EFFECT LOGIC ---
-                avg_r, avg_g, avg_b = 0, 0, 0
+                avg_r_display, avg_g_display, avg_b_display = 0, 0, 0
                 num_colors = len(processed_frame_colors)
                 if num_colors > 0:
-                    for r, g, b, w in processed_frame_colors: # <--- This line will now be safe
-                        avg_r += r; avg_g += g; avg_b += b
-                    avg_r //= num_colors; avg_g //= num_colors; avg_b //= num_colors
+                    for r_out, g_out, b_out, w_val in processed_frame_colors:
+                        # Converteer RGBW terug naar RGB voor weergave in PyQtGraph
+                        display_r = min(255, r_out + w_val)
+                        display_g = min(255, g_out + w_val)
+                        display_b = min(255, b_out + w_val)
+                        
+                        avg_r_display += display_r
+                        avg_g_display += avg_g_display
+                        avg_b_display += avg_b_display
+                    
+                    avg_r_display //= num_colors
+                    avg_g_display //= num_colors
+                    avg_b_display //= num_colors
                 
                 glow_item = self.glow_plot_items.get(action_id)
-                glow_pen = pg.mkPen(color=(avg_r, avg_g, avg_b, 70), width=self.line_width * 2, cap=Qt.RoundCap, join=Qt.RoundJoin)
+                glow_pen = pg.mkPen(color=(avg_r_display, avg_g_display, avg_b_display, 70), width=self.line_width * 2, cap=Qt.RoundCap, join=Qt.RoundJoin)
                 if not glow_item:
                     glow_item = pg.PlotDataItem(pen=glow_pen, antialias=True)
                     self.plot_widget.addItem(glow_item)
@@ -920,9 +1001,15 @@ class LEDVisualizer(QMainWindow):
                 # --- BRIGHT CORE LOGIC (ScatterPlot) ---
                 brushes = []
                 for i in range(len(action['resampled_points'])):
-                    # Use processed_frame_colors here
-                    r, g, b = (processed_frame_colors[i][0], processed_frame_colors[i][1], processed_frame_colors[i][2]) if i < len(processed_frame_colors) else (0,0,0)
-                    brushes.append(pg.mkBrush(QColor(r, g, b)))
+                    # Get RGBW components
+                    r_out, g_out, b_out, w_val = (processed_frame_colors[i][0], processed_frame_colors[i][1], processed_frame_colors[i][2], processed_frame_colors[i][3]) if i < len(processed_frame_colors) else (0,0,0,0)
+                    
+                    # Converteer RGBW terug naar RGB voor weergave in PyQtGraph
+                    display_r = min(255, r_out + w_val)
+                    display_g = min(255, g_out + w_val)
+                    display_b = min(255, b_out + w_val)
+
+                    brushes.append(pg.mkBrush(QColor(display_r, display_g, display_b)))
 
                 x_coords = [p[0] for p in action['resampled_points']]
                 y_coords = [p[1] for p in action['resampled_points']]
@@ -1057,6 +1144,8 @@ class LEDVisualizer(QMainWindow):
         if self.original_image is None:
             return
         
+        # Dit is de originele, eenvoudige helderheidsaanpassing.
+        # De 'avondmodus' is teruggedraaid zoals eerder besproken.
         brightness_factor = 1.0 - (value / 100.0)
         self.image = self.original_image.copy()
         
@@ -1121,6 +1210,7 @@ class LEDVisualizer(QMainWindow):
         self.push_undo_state()
         self.show_status_message("Lines merged.")
 
+
     def push_undo_state(self):
         state_to_save = []
         for action in self.actions:
@@ -1129,12 +1219,12 @@ class LEDVisualizer(QMainWindow):
         self.undo_stack.append(state_to_save)
         self.redo_stack.clear()
 
-    def undo_action(self):
-        if len(self.undo_stack) <= 1:
-            self.show_status_message("Nothing to undo.")
-            return
 
+    def undo_action(self):
         try:
+            if len(self.undo_stack) <= 1:
+                return  # Geen popup
+
             current_state = self.undo_stack.pop()
             self.redo_stack.append(current_state)
 
@@ -1144,41 +1234,68 @@ class LEDVisualizer(QMainWindow):
             self.actions = copy.deepcopy(previous_state)
 
             for action in self.actions:
-                action['reset_effect_state'] = True
-                action['recalculate_resample'] = True
+                action["reset_effect_state"] = True
+                action["recalculate_resample"] = True
 
             self.selected_action_index = -1
             self.selected_point_index = -1
             self.update_drawing()
             self.update_ui_for_selected_action()
-            self.show_status_message("Action undone.")
 
         except Exception as e:
-            self.show_status_message("Ongedaan maken mislukt.")
-            print(f"[FOUT bij undo]: {e}")
+            print(f"[FOUT bij undo_action]: {e}")
+
 
 
     def redo_action(self):
-        if self.redo_stack:
-            restored_state = self.redo_stack.pop()
-            self.undo_stack.append(restored_state)
+        if not self.redo_stack:
+            return  # Geen popup of statusmelding als er niets is
 
-            self.clear_all_lines(False) # Simpler way to clean everything up
+        try:
+            next_state = self.redo_stack.pop()
+            self.undo_stack.append(copy.deepcopy(next_state))
 
-            self.actions = copy.deepcopy(restored_state)
-            
+            self.clear_all_lines(False)
+            self.actions = copy.deepcopy(next_state)
+
+            # Effect opnieuw activeren
             for action in self.actions:
-                action['reset_effect_state'] = True
-                action['recalculate_resample'] = True
+                action["reset_effect_state"] = True
+                action["recalculate_resample"] = True
+
+            # ✅ Herstel globale effectinstellingen uit laatst herstelde actie
+            for action in reversed(self.actions):
+                if "effect_name" in action:
+                    effect_name = action["effect_name"]
+
+                    # Zet de dropdown zonder signalen te triggeren
+                    if effect_name in self.effect_names:
+                        self.effect_combo.blockSignals(True)
+                        self.effect_combo.setCurrentIndex(self.effect_names.index(effect_name))
+                        self.effect_combo.blockSignals(False)
+
+                    # Herstel globale effectinstellingen
+                    self.current_global_effect_params = {
+                        key: action[key]
+                        for key in action
+                        if key not in ["points", "id", "mode", "color"]
+                    }
+                    break
 
             self.selected_action_index = -1
             self.selected_point_index = -1
             self.update_drawing()
             self.update_ui_for_selected_action()
-            self.show_status_message("Action redone.")
-        else:
-            self.show_status_message("Nothing to redo.")
-    
+
+            # Optioneel: melding uitzetten als je het fluisterstil wilt
+            # self.show_status_message("Laatste actie opnieuw uitgevoerd.")
+
+        except Exception as e:
+            print(f"[FOUT bij redo_action]: {e}")
+
+
+
+
     def rotate_image(self, angle):
         if self.original_image is None:
             self.show_status_message("No image loaded to rotate.")
@@ -1830,7 +1947,7 @@ class LEDVisualizer(QMainWindow):
         # Converteer QPixmap naar QImage, en vervolgens naar NumPy array
         qimage_result = pixmap.toImage()
         if qimage_result.isNull():
-            print("WAARSCHUWING: Renderen van de scène naar QImage mislukt.")
+            print("WAARSUWING: Renderen van de scène naar QImage mislukt.")
             return None
 
         buffer = qimage_result.constBits()
@@ -1864,7 +1981,6 @@ class LEDVisualizer(QMainWindow):
                 QMessageBox.critical(self, "Export Error", f"Failed to save image: {e}")
 
 
-   # In de klasse LEDVisualizer
     def export_video(self):
         import os
         import cv2
@@ -1886,8 +2002,7 @@ class LEDVisualizer(QMainWindow):
         frame_interval_ms = 1000 / fps
 
         # Effectupdate-interval: Dit bepaalt hoe vaak de effectlogica wordt bijgewerkt.
-        # Aangepast naar 250ms om de effecten in de video verder te vertragen.
-        effect_interval_ms = 250 # Aangepast van 100 naar 250
+        effect_interval_ms = 250 
         
         # Bereken hoeveel video frames er moeten verstrijken voordat het effect wordt bijgewerkt.
         effect_frame_target = max(1, round(effect_interval_ms / frame_interval_ms))
@@ -1911,8 +2026,24 @@ class LEDVisualizer(QMainWindow):
         QApplication.processEvents()
 
         # Video-writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # Aangepaste codec naar 'AVC1' (een alias voor H.264) voor betere compatibiliteit.
+        # Dit probeert de codec te gebruiken die FFMPEG als fallback noemde.
+        fourcc = cv2.VideoWriter_fourcc(*'AVC1') 
         video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
+
+        # Controleer of de videowriter succesvol is geopend
+        if not video_writer.isOpened():
+            self.show_status_message("Fout: Kan videobestand niet openen. Controleer of FFMPEG correct is geïnstalleerd en de 'AVC1' codec wordt ondersteund.")
+            # Extra debuginformatie in de console, omdat de OpenH264-fout aanhoudt.
+            print("\n--- DEBUG INFO ---")
+            print("Mogelijke oorzaken:")
+            print("1. De 'AVC1' codec is niet beschikbaar of compatibel met jouw FFMPEG/OpenCV installatie.")
+            print("2. Er is een probleem met de OpenH264 bibliotheek (zoals de foutmelding suggereert).")
+            print("   Probeer de bibliotheek handmatig te downloaden en in de juiste map te plaatsen, zoals aangegeven in de foutmelding: https://github.com/cisco/openh264/releases")
+            print("   Zorg ervoor dat de versie overeenkomt met wat OpenCV verwacht.")
+            print("3. Probeer een andere FourCC code zoals 'H264'.")
+            print("--- EINDE DEBUG INFO ---\n")
+            return
 
         for frame_idx in range(total_frames):
             if progress.wasCanceled():
@@ -1945,6 +2076,7 @@ class LEDVisualizer(QMainWindow):
         video_writer.release()
         progress.close()
         self.show_status_message(f"Video geëxporteerd naar: {output_path}")
+
 
     def render_frame_to_image(self, width, height):
         from PyQt5.QtGui import QImage, QPainter
