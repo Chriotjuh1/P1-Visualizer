@@ -170,7 +170,8 @@ except ImportError as e:
             self.rising = True
         def get_next_frame(self):
             brightness = self.params.brightness / 100.0
-            speed_factor = self.fps / 30.0
+            # Aangepast: gebruik 100.0 om te matchen met de visualizer's 100 FPS timer
+            speed_factor = self.fps / 100.0 
             increment = 5 * speed_factor
             if self.rising:
                 self.current_breathing_factor += increment
@@ -276,10 +277,11 @@ except ImportError as e:
         def get_next_frame(self):
             # --- State Update Logic (throttled by speed/fps) ---
             
-            # The visualizer's timer runs at ~33 FPS (30ms).
+            # The visualizer's timer runs at ~100 FPS (10ms).
             # self.fps is the target speed from the slider (e.g., 6 to 150).
             # Calculate how many steps the animation should advance this frame.
-            advance_steps = self.fps / 33.0
+            # Aangepast: gebruik 100.0 om te matchen met de visualizer's 100 FPS timer
+            advance_steps = self.fps / 100.0 
             self.frame_counter += advance_steps
 
             if self.frame_counter >= 1.0:
@@ -1128,26 +1130,33 @@ class LEDVisualizer(QMainWindow):
         self.redo_stack.clear()
 
     def undo_action(self):
-        if len(self.undo_stack) > 1:
+        if len(self.undo_stack) <= 1:
+            self.show_status_message("Nothing to undo.")
+            return
+
+        try:
             current_state = self.undo_stack.pop()
             self.redo_stack.append(current_state)
-            
-            self.clear_all_lines(False) # Simpler way to clean everything up
+
+            self.clear_all_lines(False)
 
             previous_state = self.undo_stack[-1]
             self.actions = copy.deepcopy(previous_state)
-            
+
             for action in self.actions:
                 action['reset_effect_state'] = True
                 action['recalculate_resample'] = True
-            
+
             self.selected_action_index = -1
             self.selected_point_index = -1
             self.update_drawing()
             self.update_ui_for_selected_action()
             self.show_status_message("Action undone.")
-        else:
-            self.show_status_message("Nothing to undo.")
+
+        except Exception as e:
+            self.show_status_message("Ongedaan maken mislukt.")
+            print(f"[FOUT bij undo]: {e}")
+
 
     def redo_action(self):
         if self.redo_stack:
@@ -1324,36 +1333,43 @@ class LEDVisualizer(QMainWindow):
         pos = self.plot_widget.getViewBox().mapSceneToView(event.pos())
         point = (pos.x(), pos.y())
 
+        # Haal de momenteel geselecteerde effectnaam op
+        selected_effect_name = self.effect_combo.currentText()
+
+        # Initialiseer basis actie data met globale parameters
         base_action_data = {
             "id": str(uuid.uuid4()),
             "points": [point],
             "color": self.led_color,
             'reset_effect_state': True,
             'recalculate_resample': True,
-            'effect_name': self.current_global_effect_params.get('effect_name', self.effect_combo.currentText()),
-            'mode': self.draw_mode
+            'effect_name': selected_effect_name, # Altijd het geselecteerde effect toepassen
+            'mode': "Effect" # Standaard nieuwe lijnen als effecten behandelen
         }
+        # Kopieer alle huidige globale effectparameters naar de nieuwe actie
         base_action_data.update(copy.deepcopy(self.current_global_effect_params))
 
 
         if self.draw_mode == "Vrij Tekenen":
             self.drawing = True
             self.current_action = base_action_data
-            self.show_status_message("Free drawing started.")
+            self.show_status_message("Vrij tekenen gestart met geselecteerd effect.")
         elif self.draw_mode == "Lijn Tekenen":
             if not self.line_drawing_first_click:
                 self.drawing = True
                 self.line_drawing_first_click = True
                 base_action_data["points"] = [point, point]
+                # BELANGRIJKE WIJZIGING HIER:
+                # Stel de modus in op "Effect" zodat het effect direct wordt toegepast.
+                base_action_data['mode'] = "Effect" 
                 self.current_action = base_action_data
-                self.show_status_message("Start point of line selected.")
+                self.show_status_message("Startpunt van lijn geselecteerd.")
             else:
                 if self.current_action:
-                    self.current_action["points"][1] = point
-                    self.current_action['mode'] = self.draw_mode
+                    # Hier hoeven we de modus niet opnieuw in te stellen, die is al "Effect"
                     self.actions.append(self.current_action)
                     self.push_undo_state()
-                    self.show_status_message("Line completed.")
+                    self.show_status_message("Lijn voltooid.")
                 self.current_action, self.drawing, self.line_drawing_first_click = None, False, False
         elif self.draw_mode == "Lijn Bewerken":
             self.selected_action_index = -1
@@ -1388,9 +1404,9 @@ class LEDVisualizer(QMainWindow):
             if self.selected_action_index != -1:
                 self.drawing = True
                 self.drag_start_pos = point
-                self.show_status_message(f"Line {self.selected_action_index + 1} selected for editing.")
+                self.show_status_message(f"Lijn {self.selected_action_index + 1} geselecteerd voor bewerken.")
             else:
-                self.show_status_message("No line or point selected.")
+                self.show_status_message("Geen lijn of punt geselecteerd.")
 
             self.update_ui_for_selected_action()
         self.update_drawing()
@@ -1427,15 +1443,15 @@ class LEDVisualizer(QMainWindow):
         if self.drawing:
             if self.draw_mode == "Vrij Tekenen" and self.current_action:
                 if len(self.current_action["points"]) > 1:
-                    self.current_action['mode'] = self.draw_mode
+                    # VERWIJDER DEZE REGEL: self.current_action['mode'] = self.draw_mode
                     self.actions.append(self.current_action)
                     self.push_undo_state()
-                    self.show_status_message("Free drawing completed.")
+                    self.show_status_message("Vrij tekenen voltooid.")
                 else:
-                    self.show_status_message("Line too short to save.")
+                    self.show_status_message("Lijn te kort om op te slaan.")
             elif self.draw_mode == "Lijn Bewerken" and self.selected_action_index != -1:
                 self.push_undo_state()
-                self.show_status_message("Line editing completed.")
+                self.show_status_message("Lijnbewerking voltooid.")
 
         self.drawing = False
         self.drag_start_pos = None
@@ -1804,6 +1820,7 @@ class LEDVisualizer(QMainWindow):
                 QMessageBox.critical(self, "Export Error", f"Failed to save image: {e}")
 
 
+   # In de klasse LEDVisualizer
     def export_video(self):
         import os
         import cv2
@@ -1813,22 +1830,27 @@ class LEDVisualizer(QMainWindow):
             self.show_status_message("Geen afbeelding geladen.")
             return
 
-        # Resolutie gebaseerd op originele afbeelding
+        # Resolutie uit originele afbeelding
         height, width, _ = self.original_image.shape
         export_width = width
         export_height = height
 
-        # Video-instellingen
+        # Exportinstellingen
         fps = 30
         duration_seconds = 10
         total_frames = fps * duration_seconds
+        frame_interval_ms = 1000 / fps
 
-        # Effect-snelheid aanpassen aan sliderwaarde
-        effect_update_interval_ms = 1000 / max(1, self.default_speed)  # bijv. 500 ms bij speed 2
-        video_frame_interval_ms = 1000 / fps                           # bijv. 33.3 ms
-        frames_per_effect_step = max(1, round(effect_update_interval_ms / video_frame_interval_ms))
+        # Effectupdate-interval: Dit bepaalt hoe vaak de effectlogica wordt bijgewerkt.
+        # Aangepast naar 250ms om de effecten in de video verder te vertragen.
+        effect_interval_ms = 250 # Aangepast van 100 naar 250
+        
+        # Bereken hoeveel video frames er moeten verstrijken voordat het effect wordt bijgewerkt.
+        effect_frame_target = max(1, round(effect_interval_ms / frame_interval_ms))
 
-        # Bestemming kiezen
+        effect_frame_counter = 0
+
+        # Bestandslocatie
         output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
         if not output_path:
             return
@@ -1844,11 +1866,10 @@ class LEDVisualizer(QMainWindow):
         progress.show()
         QApplication.processEvents()
 
-        # Video-writer instellen
+        # Video-writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
 
-        # Video opbouwen frame per frame
         for frame_idx in range(total_frames):
             if progress.wasCanceled():
                 video_writer.release()
@@ -1857,31 +1878,29 @@ class LEDVisualizer(QMainWindow):
                 self.show_status_message("Export geannuleerd.")
                 return
 
-            # Effect updaten op basis van snelheid
-            if frame_idx % frames_per_effect_step == 0:
+            # Simuleer QTimer door elke X frames een effect-update
+            # Als effect_frame_target 1 is, wordt dit elke frame uitgevoerd.
+            if effect_frame_counter == 0:
                 self.update_drawing(force_next_frame=True)
 
-            # Render het frame exact zoals zichtbaar in UI
+            effect_frame_counter = (effect_frame_counter + 1) % effect_frame_target
+
+            # Frame renderen
             frame = self.render_frame_to_image(export_width, export_height)
 
-            # RGBA naar BGR voor OpenCV
+            # RGBA naar BGR
             if frame.shape[2] == 4:
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
             else:
                 frame_bgr = frame
 
             video_writer.write(frame_bgr)
-
             progress.setValue(frame_idx + 1)
             QApplication.processEvents()
 
-        # Opschonen en afsluiten
         video_writer.release()
         progress.close()
         self.show_status_message(f"Video geëxporteerd naar: {output_path}")
-
-
-
 
     def render_frame_to_image(self, width, height):
         from PyQt5.QtGui import QImage, QPainter
@@ -1890,10 +1909,15 @@ class LEDVisualizer(QMainWindow):
         self.update_drawing(force_next_frame=True)
         QApplication.processEvents()
 
+        # Bewaar originele grootte van de widget
         original_size = self.plot_widget.size()
+
+        # 🛑 Zet visuele updates tijdelijk uit om glitch te voorkomen
+        self.plot_widget.setUpdatesEnabled(False)
         self.plot_widget.resize(width, height)
         QApplication.processEvents()
 
+        # Offscreen afbeelding maken
         image = QImage(width, height, QImage.Format_RGBA8888)
         image.fill(0)
 
@@ -1901,9 +1925,12 @@ class LEDVisualizer(QMainWindow):
         self.plot_widget.render(painter)
         painter.end()
 
+        # Zet grootte en updates terug
         self.plot_widget.resize(original_size)
+        self.plot_widget.setUpdatesEnabled(True)
         QApplication.processEvents()
 
+        # QImage → NumPy array
         ptr = image.bits()
         ptr.setsize(image.byteCount())
         frame = np.array(ptr).reshape((height, width, 4))
