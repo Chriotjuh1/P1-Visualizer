@@ -22,7 +22,7 @@ if script_dir not in sys.path:
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSlider, QComboBox, QFileDialog, QColorDialog, QApplication, QMessageBox,
-    QStatusBar, QGroupBox, QSizePolicy
+    QStatusBar, QGroupBox, QSizePolicy, QProgressDialog
 )
 from PyQt5.QtCore import Qt, QTimer, QEvent, QSize, QRectF
 from PyQt5.QtGui import QMouseEvent, QIcon, QImage, QPixmap, QPainter, QColor
@@ -731,7 +731,7 @@ class LEDVisualizer(QMainWindow):
     def timer_update(self):
         self.update_drawing()
 
-    def update_drawing(self):
+    def update_drawing(self, force_next_frame=False):
         # Remove actions that no longer exist
         current_action_ids = {action['id'] for action in self.actions}
         items_to_remove = [action_id for action_id in self.line_plot_items if action_id not in current_action_ids]
@@ -877,7 +877,11 @@ class LEDVisualizer(QMainWindow):
                     effect_instance.num_leds = num_leds_for_this_line
                     effect_instance.fps = calculated_fps
                 
-                frame_colors = effect_instance.get_next_frame()
+                if force_next_frame:
+                    frame_colors = effect_instance.get_next_frame()
+                else:
+                    frame_colors = effect_instance.get_next_frame()
+
                 
                 # Ensure all colors in frame_colors are 4-element (R, G, B, W)
                 # This handles cases where external effect modules might return 3-element (R, G, B)
@@ -1649,95 +1653,137 @@ class LEDVisualizer(QMainWindow):
             bg_button.setStyleSheet(f"background-color: rgb({bg_color_rgb[0]},{bg_color_rgb[1]},{bg_color_rgb[2]});")
 
 
+   
+    
     def _capture_and_crop_frame(self):
         """
-        Captures a screenshot of the plot and exports it as 1920x1080.
+        Legt een screenshot van de plot vast en exporteert deze.
+        Deze functie past dynamisch de weergave aan de inhoud (afbeelding + lijnen) aan
+        en legt vervolgens het frame vast, zodat de exportresolutie volledig gevuld is.
+        Eventuele lege ruimte wordt gevuld met een zwarte achtergrond.
         """
         if not self.image_item and not self.actions:
-            QMessageBox.warning(self, "Export Error", "No image or lines loaded to export!")
+            QMessageBox.warning(self, "Export Fout", "Geen afbeelding of lijnen geladen om te exporteren!")
             return None
 
         QApplication.processEvents()
 
-        EXPORT_WIDTH = 1920
-        EXPORT_HEIGHT = 1080
+        # Dynamisch aanpassen van exportbreedte en -hoogte aan de afbeelding
+        # Dit definieert de *doelresolutie* van de output video/afbeelding
+        if self.original_image is not None:
+            img_height, img_width, _ = self.original_image.shape
+            EXPORT_WIDTH = img_width
+            EXPORT_HEIGHT = img_height
+        else:
+            # Fallback naar standaardresolutie als er geen afbeelding is geladen
+            EXPORT_WIDTH = 1920
+            EXPORT_HEIGHT = 1080
+
         target_qimage_size = QSize(EXPORT_WIDTH, EXPORT_HEIGHT)
 
-        qimage = QImage(target_qimage_size, QImage.Format_ARGB32)
-        qimage.fill(QColor(255, 255, 255))
+        # Creëer een QPixmap direct en vul deze met zwart
+        pixmap = QPixmap(target_qimage_size)
+        pixmap.fill(QColor(0, 0, 0)) # Vul de QPixmap expliciet met zwart
 
-        painter = QPainter(qimage)
+        painter = QPainter(pixmap) # Teken op de QPixmap
         
         view_box = self.plot_widget.getViewBox()
-        original_x_range, original_y_range = view_box.viewRange()
+        plot_item = self.plot_widget.getPlotItem() # Haal het plotItem op
         
+        original_x_range, original_y_range = view_box.viewRange() # Bewaar het originele weergavebereik
+
         try:
             painter.setRenderHint(QPainter.Antialiasing)
-            scene = self.plot_widget.getPlotItem().scene()
+            scene = plot_item.scene() # Gebruik plot_item.scene() direct
 
-            content_x_coords, content_y_coords = [], []
+            # Bepaal de initiële inhoudsgrenzen op basis van de afbeelding (indien aanwezig)
             if self.original_image is not None:
-                h, w, _ = self.original_image.shape
-                content_x_coords.extend([0, w]); content_y_coords.extend([0, h])
-            
+                # Gebruik de afmetingen van de geladen afbeelding als startpunt
+                content_x_min, content_x_max = 0.0, float(img_width)
+                content_y_min, content_y_max = 0.0, float(img_height)
+            else:
+                # Als er geen afbeelding is, begin dan met een lege set coördinaten
+                content_x_min, content_x_max = float('inf'), float('-inf')
+                content_y_min, content_y_max = float('inf'), float('-inf')
+
+            # Breid de grenzen uit met alle lijnpunten
             for action in self.actions:
                 for p in action['points']:
-                    content_x_coords.append(p[0]); content_y_coords.append(p[1])
+                    content_x_min = min(content_x_min, p[0])
+                    content_x_max = max(content_x_max, p[0])
+                    content_y_min = min(content_y_min, p[1])
+                    content_y_max = max(content_y_max, p[1])
             
-            if not content_x_coords or not content_y_coords: return None
+            # Als er nog steeds geen inhoud is (geen afbeelding en geen lijnen), retourneer None
+            if content_x_min == float('inf') or content_y_min == float('inf'):
+                return None
 
-            content_x_min, content_x_max = min(content_x_coords), max(content_x_coords)
-            content_y_min, content_y_max = min(content_y_coords), max(content_y_coords)
+            # Voeg GEEN buffermarge toe voor "Fill Screen" om maximale vulling te garanderen
+            buffer_pixel_margin = 0 # <-- Gewijzigd naar 0
             
-            buffer_margin = 10
-            content_x_min -= buffer_margin; content_x_max += buffer_margin
-            content_y_min -= buffer_margin; content_y_max += buffer_margin
+            content_x_min -= buffer_pixel_margin
+            content_x_max += buffer_pixel_margin
+            content_y_min -= buffer_pixel_margin
+            content_y_max += buffer_pixel_margin
 
             content_width = content_x_max - content_x_min
             content_height = content_y_max - content_y_min
             
-            if content_width <= 0 or content_height <= 0:
-                # Fallback if content area is zero or negative
-                content_width = EXPORT_WIDTH / 2; content_height = EXPORT_HEIGHT / 2
-                center_x = content_x_coords[0] if content_x_coords else 0
-                center_y = content_y_coords[0] if content_y_coords else 0
-                content_x_min = center_x - content_width / 2; content_x_max = center_x + content_width / 2
-                content_y_min = center_y - content_height / 2; content_y_max = center_y + content_height / 2
+            # Zorg ervoor dat de inhoudsbreedte en -hoogte niet nul of negatief zijn
+            if content_width <= 0: content_width = 1.0 # Minimum 1 pixel
+            if content_height <= 0: content_height = 1.0 # Minimum 1 pixel
 
+            # Bereken de schaalfactor om de inhoud in de exportafmetingen te vullen.
+            # We gebruiken 'max' om ervoor te zorgen dat de video volledig gevuld is,
+            # wat zal resulteren in bijsnijden als de beeldverhouding van de inhoud
+            # niet overeenkomt met de beeldverhouding van de exportresolutie.
             scale_x = EXPORT_WIDTH / content_width
             scale_y = EXPORT_HEIGHT / content_height
-            scale = max(scale_x, scale_y) # Use max to ensure it fills the screen, potentially cropping
+            scale = max(scale_x, scale_y) # Dit is de "Fill Screen" logica
 
+            # Bereken de werkelijke weergaveafmetingen (in de plot-coördinaten) die nodig zijn
+            # om de geschaalde inhoud te bevatten en de exportbeeldverhouding te vullen.
             view_width = EXPORT_WIDTH / scale
             view_height = EXPORT_HEIGHT / scale
 
-            center_x = (content_x_min + content_x_max) / 2
-            center_y = (content_y_min + content_y_max) / 2
+            # Centreer de inhoud binnen de berekende weergaveafmetingen
+            center_x = content_x_min + content_width / 2
+            center_y = content_y_min + content_height / 2
 
-            final_x_min = center_x - view_width / 2; final_x_max = center_x + view_width / 2
-            final_y_min = center_y - view_height / 2; final_y_max = center_y + view_height / 2
+            final_x_min = center_x - view_width / 2
+            final_x_max = center_x + view_width / 2
+            final_y_min = center_y - view_height / 2
+            final_y_max = center_y + view_height / 2
 
+            # Stel de view box in op het berekende bereik
             view_box.setRange(xRange=(final_x_min, final_x_max), yRange=(final_y_min, final_y_max), padding=0)
 
-            scene.render(painter, QRectF(qimage.rect()), view_box.viewRect())
+            # Render de scène naar de QPixmap
+            scene.render(painter, QRectF(pixmap.rect()), view_box.viewRect())
 
         finally:
             painter.end()
+            # Herstel het originele weergavebereik.
             view_box.setRange(xRange=original_x_range, yRange=original_y_range, padding=0)
+            self.update_drawing() # Zorg ervoor dat de liveweergave correct wordt bijgewerkt na herstel
 
-
-        if qimage.isNull():
-            print("WARNING: Rendering the scene to QImage failed.")
+        # Converteer QPixmap naar QImage, en vervolgens naar NumPy array
+        qimage_result = pixmap.toImage()
+        if qimage_result.isNull():
+            print("WAARSCHUWING: Renderen van de scène naar QImage mislukt.")
             return None
 
-        buffer = qimage.constBits()
-        buffer.setsize(qimage.sizeInBytes())
-        arr = np.frombuffer(buffer, dtype=np.uint8).reshape((qimage.height(), qimage.width(), 4))
+        buffer = qimage_result.constBits()
+        buffer.setsize(qimage_result.sizeInBytes())
+        arr = np.frombuffer(buffer, dtype=np.uint8).reshape((qimage_result.height(), qimage_result.width(), 4))
         
         arr_rgba = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
         pil_image = Image.fromarray(arr_rgba, 'RGBA')
 
         return pil_image
+
+
+
     
     def save_image(self):
         if self.plot_widget:
@@ -1759,33 +1805,74 @@ class LEDVisualizer(QMainWindow):
 
 
     def export_video(self):
-        try:
-            self.plot_widget.getViewBox().autoRange(padding=0.0)
-            exporter = ImageExporter(self.plot_widget.plotItem)
-            exporter.params['width'] = 1920
-            exporter.params['height'] = 1080
+        export_width = 2560
+        export_height = 1664
+        fps = 30
+        duration_seconds = 10
+        total_frames = fps * duration_seconds
 
-            file_path, _ = QFileDialog.getSaveFileName(self, "Export MP4", "", "MP4 Files (*.mp4)")
-            if file_path:
-                if not file_path.lower().endswith('.mp4'):
-                    file_path += '.mp4'
+        output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
+        if not output_path:
+            return
 
-                duration_seconds = 5
-                fps = 30
-                total_frames = duration_seconds * fps
-                frames = []
+        # Maak progressvenster
+        progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
+        progress.setWindowTitle("Exporteren")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumWidth(400)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
 
-                for _ in range(total_frames):
-                    self.update_drawing()  # Force redraw for animation frames
-                    img = exporter.export(toBytes=True)
-                    frame = np.array(Image.open(img))
-                    frames.append(frame)
-                    QApplication.processEvents()
+        # Video setup
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
 
-                imageio.mimwrite(file_path, frames, fps=fps, quality=8)
-                self.show_status_message(f"MP4 exported to {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"Failed to export video: {e}")
+        for frame_idx in range(total_frames):
+            if progress.wasCanceled():
+                video_writer.release()
+                os.remove(output_path)
+                self.show_status_message("Export geannuleerd.")
+                return
+
+            self.update_drawing(force_next_frame=True)  # <-- forceert de effect-animatie
+            frame = self.render_frame_to_image(export_width, export_height)
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            video_writer.write(frame_bgr)
+
+            progress.setValue(frame_idx + 1)
+            QApplication.processEvents()
+
+        video_writer.release()
+        progress.close()
+        self.show_status_message(f"Video geëxporteerd naar: {output_path}")
+
+
+
+    def render_frame_to_image(self, width, height):
+        """
+        Rendert het huidige plotgebied naar een afbeelding met opgegeven breedte en hoogte.
+        Retourneert een numpy-array (RGBA).
+        """
+        # Maak een tijdelijk afbeelding (QImage) met transparante achtergrond
+        image = QImage(width, height, QImage.Format_RGBA8888)
+        image.fill(Qt.transparent)
+
+        # Render de plot_widget in deze afbeelding
+        painter = QPainter(image)
+        self.plot_widget.render(painter, QRectF(0, 0, width, height))
+        painter.end()
+
+        # Zet QImage om naar numpy-array
+        ptr = image.bits()
+        ptr.setsize(image.byteCount())
+        arr = np.array(ptr).reshape((height, width, 4))  # RGBA
+
+        return arr
+
+
 
 
 
