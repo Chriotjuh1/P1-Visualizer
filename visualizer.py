@@ -1805,33 +1805,35 @@ class LEDVisualizer(QMainWindow):
 
 
     def export_video(self):
-        
+        import os
+        import cv2
+        import numpy as np
 
         if self.original_image is None:
             self.show_status_message("Geen afbeelding geladen.")
             return
 
-        # Resolutie afgeleid van originele afbeelding
+        # Resolutie gebaseerd op originele afbeelding
         height, width, _ = self.original_image.shape
         export_width = width
         export_height = height
 
-        # Instellingen
-        fps = 30  # videoframes per seconde
+        # Video-instellingen
+        fps = 30
         duration_seconds = 10
         total_frames = fps * duration_seconds
 
-        # Effect-snelheid op basis van UI-slider
-        effect_speed = max(1, self.default_speed)  # bijvoorbeeld 1–5
-        effect_fps = 5 * effect_speed              # effectupdates per seconde
-        frames_per_effect_step = max(1, round(fps / effect_fps))
+        # Effect-snelheid aanpassen aan sliderwaarde
+        effect_update_interval_ms = 1000 / max(1, self.default_speed)  # bijv. 500 ms bij speed 2
+        video_frame_interval_ms = 1000 / fps                           # bijv. 33.3 ms
+        frames_per_effect_step = max(1, round(effect_update_interval_ms / video_frame_interval_ms))
 
-        # Bestandslocatie kiezen
+        # Bestemming kiezen
         output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
         if not output_path:
             return
 
-        # Voortgangsdialoog
+        # Voortgangsvenster
         progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
         progress.setWindowTitle("Exporteren")
         progress.setWindowModality(Qt.WindowModal)
@@ -1842,11 +1844,11 @@ class LEDVisualizer(QMainWindow):
         progress.show()
         QApplication.processEvents()
 
-        # Video-writer klaarzetten
+        # Video-writer instellen
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
 
-        # Render frames
+        # Video opbouwen frame per frame
         for frame_idx in range(total_frames):
             if progress.wasCanceled():
                 video_writer.release()
@@ -1855,14 +1857,14 @@ class LEDVisualizer(QMainWindow):
                 self.show_status_message("Export geannuleerd.")
                 return
 
-            # Effect-animatie updaten op juiste snelheid
+            # Effect updaten op basis van snelheid
             if frame_idx % frames_per_effect_step == 0:
                 self.update_drawing(force_next_frame=True)
 
-            # Frame renderen (inclusief afbeelding + lijn, zonder zwarte randen)
+            # Render het frame exact zoals zichtbaar in UI
             frame = self.render_frame_to_image(export_width, export_height)
 
-            # RGBA → BGR voor OpenCV
+            # RGBA naar BGR voor OpenCV
             if frame.shape[2] == 4:
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
             else:
@@ -1873,6 +1875,7 @@ class LEDVisualizer(QMainWindow):
             progress.setValue(frame_idx + 1)
             QApplication.processEvents()
 
+        # Opschonen en afsluiten
         video_writer.release()
         progress.close()
         self.show_status_message(f"Video geëxporteerd naar: {output_path}")
@@ -1884,25 +1887,29 @@ class LEDVisualizer(QMainWindow):
         from PyQt5.QtGui import QImage, QPainter
         import numpy as np
 
-        # Forceer tekenen + Qt-eventloop update
         self.update_drawing(force_next_frame=True)
         QApplication.processEvents()
 
-        # QImage als canvas maken
-        image = QImage(width, height, QImage.Format_RGBA8888)
-        image.fill(0)  # zwart/transparant
+        original_size = self.plot_widget.size()
+        self.plot_widget.resize(width, height)
+        QApplication.processEvents()
 
-        # Volledige widget renderen (inclusief lijn en afbeelding)
+        image = QImage(width, height, QImage.Format_RGBA8888)
+        image.fill(0)
+
         painter = QPainter(image)
         self.plot_widget.render(painter)
         painter.end()
 
-        # QImage → NumPy-array (RGBA)
+        self.plot_widget.resize(original_size)
+        QApplication.processEvents()
+
         ptr = image.bits()
         ptr.setsize(image.byteCount())
         frame = np.array(ptr).reshape((height, width, 4))
 
         return frame
+
 
 
 
