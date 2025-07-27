@@ -1805,17 +1805,33 @@ class LEDVisualizer(QMainWindow):
 
 
     def export_video(self):
-        export_width = 2560
-        export_height = 1664
-        fps = 30
+        
+
+        if self.original_image is None:
+            self.show_status_message("Geen afbeelding geladen.")
+            return
+
+        # Resolutie afgeleid van originele afbeelding
+        height, width, _ = self.original_image.shape
+        export_width = width
+        export_height = height
+
+        # Instellingen
+        fps = 30  # videoframes per seconde
         duration_seconds = 10
         total_frames = fps * duration_seconds
 
+        # Effect-snelheid op basis van UI-slider
+        effect_speed = max(1, self.default_speed)  # bijvoorbeeld 1–5
+        effect_fps = 5 * effect_speed              # effectupdates per seconde
+        frames_per_effect_step = max(1, round(fps / effect_fps))
+
+        # Bestandslocatie kiezen
         output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
         if not output_path:
             return
 
-        # Maak progressvenster
+        # Voortgangsdialoog
         progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
         progress.setWindowTitle("Exporteren")
         progress.setWindowModality(Qt.WindowModal)
@@ -1826,20 +1842,32 @@ class LEDVisualizer(QMainWindow):
         progress.show()
         QApplication.processEvents()
 
-        # Video setup
+        # Video-writer klaarzetten
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
 
+        # Render frames
         for frame_idx in range(total_frames):
             if progress.wasCanceled():
                 video_writer.release()
-                os.remove(output_path)
+                if os.path.exists(output_path):
+                    os.remove(output_path)
                 self.show_status_message("Export geannuleerd.")
                 return
 
-            self.update_drawing(force_next_frame=True)  # <-- forceert de effect-animatie
+            # Effect-animatie updaten op juiste snelheid
+            if frame_idx % frames_per_effect_step == 0:
+                self.update_drawing(force_next_frame=True)
+
+            # Frame renderen (inclusief afbeelding + lijn, zonder zwarte randen)
             frame = self.render_frame_to_image(export_width, export_height)
-            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+
+            # RGBA → BGR voor OpenCV
+            if frame.shape[2] == 4:
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            else:
+                frame_bgr = frame
+
             video_writer.write(frame_bgr)
 
             progress.setValue(frame_idx + 1)
@@ -1851,26 +1879,31 @@ class LEDVisualizer(QMainWindow):
 
 
 
-    def render_frame_to_image(self, width, height):
-        """
-        Rendert het huidige plotgebied naar een afbeelding met opgegeven breedte en hoogte.
-        Retourneert een numpy-array (RGBA).
-        """
-        # Maak een tijdelijk afbeelding (QImage) met transparante achtergrond
-        image = QImage(width, height, QImage.Format_RGBA8888)
-        image.fill(Qt.transparent)
 
-        # Render de plot_widget in deze afbeelding
+    def render_frame_to_image(self, width, height):
+        from PyQt5.QtGui import QImage, QPainter
+        import numpy as np
+
+        # Forceer tekenen + Qt-eventloop update
+        self.update_drawing(force_next_frame=True)
+        QApplication.processEvents()
+
+        # QImage als canvas maken
+        image = QImage(width, height, QImage.Format_RGBA8888)
+        image.fill(0)  # zwart/transparant
+
+        # Volledige widget renderen (inclusief lijn en afbeelding)
         painter = QPainter(image)
-        self.plot_widget.render(painter, QRectF(0, 0, width, height))
+        self.plot_widget.render(painter)
         painter.end()
 
-        # Zet QImage om naar numpy-array
+        # QImage → NumPy-array (RGBA)
         ptr = image.bits()
         ptr.setsize(image.byteCount())
-        arr = np.array(ptr).reshape((height, width, 4))  # RGBA
+        frame = np.array(ptr).reshape((height, width, 4))
 
-        return arr
+        return frame
+
 
 
 
