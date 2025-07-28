@@ -1938,6 +1938,35 @@ class LEDVisualizer(QMainWindow):
             # Render de scène naar de QPixmap
             scene.render(painter, QRectF(pixmap.rect()), view_box.viewRect())
 
+            # --- Watermerk toevoegen ---
+            # Laad het watermerk
+            watermark_path = os.path.join(script_dir, "images", "pulseline1.png")
+            try:
+                watermark_image = QImage(watermark_path)
+                if watermark_image.isNull():
+                    print(f"WAARSCHUWING: Watermerk afbeelding niet gevonden of kon niet worden geladen: {watermark_path}")
+                else:
+                    # Bepaal de positie linksonder
+                    # Watermerk breedte en hoogte
+                    wm_width = watermark_image.width()
+                    wm_height = watermark_image.height()
+
+                    # Marges vanaf de onderkant en linkerkant van de exportafbeelding
+                    margin = 20 # Pixels vanaf de rand
+
+                    # Bereken de X en Y coördinaten voor de linksonderhoek van het watermerk
+                    # De Y-coördinaat moet worden aangepast omdat QPainter (0,0) linksboven is
+                    # en we willen dat het watermerk op de bodem verschijnt.
+                    # De hoogte van de pixmap is EXPORT_HEIGHT.
+                    wm_x = margin
+                    wm_y = EXPORT_HEIGHT - wm_height - margin
+
+                    # Teken het watermerk op de pixmap
+                    painter.drawImage(wm_x, wm_y, watermark_image)
+            except Exception as e:
+                print(f"FOUT: Kan watermerk niet toevoegen: {e}")
+            # --- Einde Watermerk ---
+
         finally:
             painter.end()
             # Herstel het originele weergavebereik.
@@ -1961,10 +1990,17 @@ class LEDVisualizer(QMainWindow):
 
 
 
+
+
     
     def save_image(self):
         if self.plot_widget:
             try:
+                from pyqtgraph.exporters import ImageExporter
+                import cv2
+                import numpy as np
+                import os
+
                 self.plot_widget.getViewBox().autoRange(padding=0.0)
 
                 exporter = ImageExporter(self.plot_widget.plotItem)
@@ -1975,10 +2011,53 @@ class LEDVisualizer(QMainWindow):
                 if file_path:
                     if not file_path.lower().endswith('.png'):
                         file_path += '.png'
+
+                    # Stap 1: exporteer afbeelding zonder watermerk
                     exporter.export(file_path)
-                    self.show_status_message(f"Image saved as {file_path}")
+
+                    # Stap 2: laad afbeelding opnieuw in met OpenCV
+                    image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+                    if image is None:
+                        self.show_status_message("Fout bij het openen van de afbeelding voor watermerk.")
+                        return
+
+                    # Zorg dat afbeelding 4 kanalen heeft
+                    if image.shape[2] == 3:
+                        image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
+
+                    # Laad het watermerk
+                    logo = cv2.imread("images/pulseline1.png", cv2.IMREAD_UNCHANGED)
+                    if logo is not None and logo.shape[2] == 4:
+                        target_height = int(image.shape[0] * 0.1)
+                        scale_factor = target_height / logo.shape[0]
+                        logo_resized = cv2.resize(
+                            logo,
+                            (int(logo.shape[1] * scale_factor), target_height),
+                            interpolation=cv2.INTER_AREA
+                        )
+
+                        x_offset = 12
+                        y_offset = image.shape[0] - logo_resized.shape[0] - 12
+
+                        overlay = logo_resized[..., :3]
+                        mask = logo_resized[..., 3:] / 255.0
+
+                        roi = image[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1], :3]
+                        blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
+                        image[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1], :3] = blended
+
+                    # Zet eventueel terug naar BGR (zonder alpha)
+                    if image.shape[2] == 4:
+                        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+
+                    # Sla overschreven afbeelding op met watermerk
+                    cv2.imwrite(file_path, image)
+
+                    self.show_status_message(f"Afbeelding opgeslagen met watermerk: {file_path}")
+
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", f"Failed to save image: {e}")
+                QMessageBox.critical(self, "Export Error", f"Fout bij opslaan afbeelding: {e}")
+
 
 
     def export_video(self):
@@ -2069,7 +2148,30 @@ class LEDVisualizer(QMainWindow):
             else:
                 frame_bgr = frame
 
+            # Laad het watermerk
+            logo = cv2.imread("images/pulseline1.png", cv2.IMREAD_UNCHANGED)  # Laad met alpha-kanaal
+
+            if logo is not None:
+                # Schaal het watermerk naar 10% van videohoogte
+                target_height = int(frame_bgr.shape[0] * 0.1)
+                scale_factor = target_height / logo.shape[0]
+                logo_resized = cv2.resize(logo, (int(logo.shape[1] * scale_factor), target_height), interpolation=cv2.INTER_AREA)
+
+                # Positie linksonder
+                x_offset = 12
+                y_offset = frame_bgr.shape[0] - logo_resized.shape[0] - 12
+
+                # Overlay: split in BGR en Alpha
+                if logo_resized.shape[2] == 4:
+                    overlay = logo_resized[..., :3]
+                    mask = logo_resized[..., 3:] / 255.0
+                    roi = frame_bgr[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1]]
+                    blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
+                    frame_bgr[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1]] = blended
+
+            # Schrijf frame met watermerk
             video_writer.write(frame_bgr)
+
             progress.setValue(frame_idx + 1)
             QApplication.processEvents()
 
