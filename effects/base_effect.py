@@ -1,26 +1,34 @@
-# P1-Visualizer/effects/base_effect.py
+# In effects/base_effect.py
 
-# Importeer EffectModel vanuit schemas.py, ervan uitgaande dat schemas.py in dezelfde map staat
 from .schemas import EffectModel
 
 class Effects:
-    """
-    Basisklasse voor alle LED-effecten.
-    Definieert de gemeenschappelijke attributen en de interface voor het ophalen van het volgende frame.
-    """
     def __init__(self, model: EffectModel):
-        self.model = model # Sla het hele model object op
+        self.model = model
         self.params = model.params
-        self.frame_skip = model.frame_skip
-        self.fps = model.fps
-        self.num_leds = model.num_leds
+        self.speed = model.speed
+        self._num_leds = model.num_leds
+        self.current_frame = 0.0
+        self._on_num_leds_change()
 
-    def get_next_frame(self):
+    # TOEGEVOEGD: Een standaard implementatie van de functie.
+    # Dit zorgt ervoor dat alle effecten deze functie hebben.
+    def _on_num_leds_change(self):
         """
-        Moet worden geïmplementeerd door subklassen om het volgende LED-frame te retourneren.
+        Deze functie wordt aangeroepen als het aantal LEDs verandert.
+        Subklassen kunnen deze overschrijven als ze specifieke logica nodig hebben.
         """
-        raise NotImplementedError("Do not call get next frame on the base class")
+        pass
 
-# Voeg een alias toe zodat 'BaseEffect' ook geïmporteerd kan worden,
-# voor compatibiliteit met andere modules die mogelijk deze naam verwachten.
-BaseEffect = Effects
+    @property
+    def num_leds(self):
+        return self._num_leds
+
+    @num_leds.setter
+    def num_leds(self, value):
+        if self._num_leds != value:
+            self._num_leds = value
+            self._on_num_leds_change()
+
+    def get_next_frame(self, delta_time: float = 0.0):
+        raise NotImplementedError("get_next_frame() must be implemented by subclasses")
