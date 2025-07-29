@@ -33,29 +33,29 @@ from PIL import Image
 # Enable OpenGL for smoother rendering and anti-aliasing
 pg.setConfigOptions(useOpenGL=True)
 
-# Definieer de correcte RGB naar RGBW conversiefunctie globaal
-# Deze functie zal nu door alle effecten en voor de uiteindelijke weergave worden gebruikt.
+# Define the correct RGB to RGBW conversion function globally
+# This function will now be used by all effects and for the final display.
 def rgb_to_rgbw(r, g, b):
-    r, g, b = int(r), int(g), int(b) # Zorg ervoor dat het integers zijn
+    r, g, b = int(r), int(g), int(b) # Ensure they are integers
 
-    # Vind de minimale waarde van R, G, B om de witte component te bepalen
+    # Find the minimum value of R, G, B to determine the white component
     white = min(r, g, b)
 
-    # Trek de witte component af van R, G, B om de resterende RGB-waarden te krijgen
+    # Subtract the white component from R, G, B to get the remaining RGB values
     r_out = r - white
     g_out = g - white
     b_out = b - white
 
-    # Zorg ervoor dat de waarden binnen het 0-255 bereik blijven
+    # Ensure the values stay within the 0-255 range
     r_out = max(0, min(255, r_out))
     g_out = max(0, min(255, g_out))
     b_out = max(0, min(255, b_out))
-    white = max(0, min(255, white)) # Zorg ervoor dat wit ook binnen bereik is
+    white = max(0, min(255, white)) # Ensure white is also within range
 
     return r_out, g_out, b_out, white
 
 
-# --- Try to import the actual utility and effect files ---
+# --- Import the actual utility and effect files ---
 try:
     # IMPORTANT NOTE: Make sure the 'effects' folder is a valid Python package
     # (i.e., it contains an empty or initial '__init__.py' file).
@@ -67,7 +67,7 @@ try:
         KnightRiderParams, MeteorParams, MulticolorParams,
         RunningLineParams, ChristmasSnowParams, FlagParams
     )
-    from effects.effects import Effects # Adjusted import path
+    from effects.base_effect import Effects # Adjusted import path
     from effects.breathing import BreathingEffect # Adjusted import path
     from effects.knight_rider import KnightRiderEffect # Adjusted import path
     from effects.meteor import MeteorEffect # Adjusted import path
@@ -78,7 +78,7 @@ try:
     from effects.static import StaticEffect # Adjusted import path
     
     from utils import distance, resample_points, smooth_points, point_line_distance # Adjusted import path
-    # We importeren nu GEEN rgb_to_rgbw uit effects.converts, we gebruiken de lokale versie.
+    # We are now NOT importing rgb_to_rgbw from effects.converts, we are using the local version.
     print("INFO: Actual 'utils' and 'effects' modules loaded.")
 
     # Mapping of effect names to their classes
@@ -95,473 +95,10 @@ try:
     def get_effect_class(effect_name): return _effect_classes.get(effect_name)
 
 except ImportError as e:
-    print(f"WARNING: Could not find actual 'utils' and 'effects' modules: {e}. Fallback to dummy implementations.")
-    # Dummy implementations for development without full modules
-    def distance(p1, p2): return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-    def resample_points(points, interval):
-        if len(points) < 2: return points
-        # For dummy: simple resampling, can be improved later
-        if interval <= 0: return points
-        resampled = [points[0]]
-        current_dist = 0.0
-        for i in range(len(points) - 1):
-            segment_length = distance(points[i], points[i+1])
-            if segment_length == 0: continue
-            num_segments = int(segment_length / interval)
-            for j in range(1, num_segments + 1):
-                t = j * interval / segment_length
-                new_x = points[i][0] + t * (points[i+1][0] - points[i][0])
-                new_y = points[i][1] + t * (points[i+1][1] - points[i][1]) # Corrected line
-                resampled.append((new_x, new_y))
-        if len(points) > 1: resampled.append(points[-1])
-        return resampled
-
-
-    def smooth_points(points, window=5): return points
-    def point_line_distance(point, p1, p2):
-        line_length_sq = distance(p1, p2)**2
-        if line_length_sq == 0: return distance(point, p1)
-        t = max(0, min(1, (((point[0] - p1[0]) * (p2[0] - p1[0])) + ((point[1] - p1[1]) * (p2[1] - p1[1]))) / line_length_sq))
-        closest_point = (p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1]))
-        return distance(point, closest_point)
-    # De rgb_to_rgbw functie is nu globaal gedefinieerd, dus hoeft hier niet opnieuw.
-    
-    # Dummy classes for effects and schemas
-    class Color:
-        # Adjusted to accept keyword arguments for consistency
-        def __init__(self, red, green, blue): 
-            self.red, self.green, self.blue = int(red), int(green), int(blue)
-        def __repr__(self): return f"Color(r={self.red}, g={self.green}, b={self.blue})"
-    
-    class StaticParams:
-        def __init__(self, color, brightness): self.color, self.brightness = color, brightness
-    class BreathingParams:
-        def __init__(self, color, brightness): self.color, self.brightness = color, brightness
-    class KnightRiderParams:
-        def __init__(self, color, brightness, line_length): self.color, self.brightness, self.line_length = color, brightness, line_length
-    class MeteorParams:
-        def __init__(self, color, brightness, meteor_width, spark_intensity): self.color, self.brightness, self.meteor_width, self.spark_intensity = color, brightness, spark_intensity
-    class MulticolorParams:
-        def __init__(self, brightness): self.brightness = brightness
-    class RunningLineParams:
-        def __init__(self, color, brightness, line_width, background_color, number_of_lines): self.color, self.brightness, self.line_width, self.background_color, self.number_of_lines = color, brightness, line_width, background_color, number_of_lines
-    class ChristmasSnowParams:
-        def __init__(self, brightness, red_chance, dark_green_chance): self.brightness, self.red_chance, self.dark_green_chance = brightness, red_chance, dark_green_chance
-    class FlagParams:
-        def __init__(self, color, brightness, width, background_color): self.color, self.brightness, self.width, self.background_color = color, brightness, width, background_color
-
-    class EffectModel:
-        def __init__(self, params, frame_skip, fps, num_leds): self.params, self.frame_skip, self.fps, self.num_leds = params, frame_skip, fps, num_leds
-    
-    class Effects:
-        def __init__(self, model: EffectModel):
-            self.model = model
-            self.params = model.params
-            self.fps = model.fps
-            self._num_leds = model.num_leds
-            self._on_num_leds_change()
-            self.current_frame = 0.0 # Initialiseer current_frame als float voor nauwkeurigere animatie
-
-        @property
-        def num_leds(self):
-            return self._num_leds
-
-        @num_leds.setter
-        def num_leds(self, value):
-            if self._num_leds != value:
-                self._num_leds = value
-                self._on_num_leds_change()
-
-        def _on_num_leds_change(self):
-            pass
-
-        def get_next_frame(self):
-            raise NotImplementedError("get_next_frame() must be implemented by subclasses")
-
-
-    class DummyStaticEffect(Effects):
-        def get_next_frame(self):
-            r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
-            brightness_factor = self.params.brightness / 100.0
-            # Gebruik de globale rgb_to_rgbw functie
-            return [[*rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))]] * self.num_leds
-    
-    class DummyBreathingEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            self.current_breathing_factor = 0.0
-            self.rising = True
-        def get_next_frame(self):
-            brightness = self.params.brightness / 100.0
-            # Aangepast: gebruik 100.0 om te matchen met de visualizer's 100 FPS timer
-            speed_factor = self.fps / 100.0 
-            increment = 5 * speed_factor
-            if self.rising:
-                self.current_breathing_factor += increment
-                if self.current_breathing_factor >= 255.0:
-                    self.current_breathing_factor = 255.0
-                    self.rising = False
-            else:
-                self.current_breathing_factor -= increment
-                if self.current_breathing_factor <= 0:
-                    self.current_breathing_factor = 0
-                    self.rising = True
-            normalized_factor = self.current_breathing_factor / 255.0
-            r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
-            r_breath, g_breath, b_breath = r * normalized_factor, g * normalized_factor, b * normalized_factor
-            red, green, blue = int(r_breath * brightness), int(g_breath * brightness), int(b_breath * brightness)
-            # Gebruik de globale rgb_to_rgbw functie
-            red, green, blue, white = rgb_to_rgbw(red, green, blue)
-            return [[red, green, blue, white]] * self.num_leds
-
-    class DummyKnightRiderEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            self.position = 0
-            self.moving_right = True
-            self.fade_divider = 3
-            self.frame_counter = 0.0 # Initialize frame_counter
-
-        def get_next_frame(self):
-            line_length = self.params.line_length
-            r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
-            brightness_factor = self.params.brightness / 100
-            
-            frame = [[0, 0, 0, 0]] * self.num_leds
-
-            # Update the Knight Rider position based on FPS
-            advance_steps = self.fps / 33.0 # Use 33.0 as base for visualizer's FPS
-            self.frame_counter += advance_steps
-
-            if self.frame_counter >= 1.0:
-                steps_to_take = int(self.frame_counter)
-                self.frame_counter -= steps_to_take
-                
-                for _ in range(steps_to_take):
-                    if self.moving_right:
-                        self.position += 1
-                        if self.position + line_length >= self.num_leds:
-                            self.moving_right = False
-                            self.position = self.num_leds - line_length - 1
-                            if self.position < 0: self.position = 0 # Ensure it doesn't go negative if line_length is large
-                    else:
-                        self.position -= 1
-                        if self.position <= 0:
-                            self.moving_right = True
-                            self.position = 0
-            
-            # Draw the main line
-            # Gebruik de globale rgb_to_rgbw functie
-            main_color = rgb_to_rgbw(int(r * brightness_factor), int(g * brightness_factor), int(b * brightness_factor))
-            for i in range(line_length):
-                led_pos = (self.position + i)
-                if 0 <= led_pos < self.num_leds:
-                    frame[led_pos] = main_color
-
-            # Draw the fading tail
-            for fade in range(1, line_length + 1):
-                current_fade_factor = 1.0 - (fade / (line_length + self.fade_divider))
-                if current_fade_factor < 0: current_fade_factor = 0
-
-                faded_r_extra = int(r * current_fade_factor * brightness_factor)
-                faded_g_extra = int(g * current_fade_factor * brightness_factor)
-                faded_b_extra = int(b * current_fade_factor * brightness_factor)
-                # Gebruik de globale rgb_to_rgbw functie
-                red_out_faded, green_out_faded, blue_out_faded, white_out_faded = rgb_to_rgbw(
-                    faded_r_extra, faded_g_extra, faded_b_extra
-                )
-                final_faded_color = [red_out_faded, green_out_faded, blue_out_faded, white_out_faded]
-
-                # Fade on the left side
-                prev_pos = self.position - fade
-                if 0 <= prev_pos < self.num_leds:
-                    # Only overwrite if the fading color is brighter (or equal) than existing
-                    # This prevents overwriting the main line with a weaker fade
-                    if frame[prev_pos][0] < final_faded_color[0] or frame[prev_pos][1] < final_faded_color[1] or frame[prev_pos][2] < final_faded_color[2]:
-                        frame[prev_pos] = final_faded_color
-                
-                # Fade on the right side (behind the main line)
-                next_pos = self.position + line_length + fade - 1
-                if 0 <= next_pos < self.num_leds:
-                    if frame[next_pos][0] < final_faded_color[0] or frame[next_pos][1] < final_faded_color[1] or frame[next_pos][2] < final_faded_color[2]:
-                        frame[next_pos] = final_faded_color
-
-            return frame
-
-    class DummyMeteorEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            self.max_sparkle_duration = 100
-            self.frame_counter = 0.0 # Use float for more precision
-            self._on_num_leds_change()
-
-        def _on_num_leds_change(self):
-            """Reset the status when the number of LEDs changes."""
-            self.position = float(self.num_leds - 1)
-            self.sparkles = {}
-
-        def get_next_frame(self):
-            # --- State Update Logic (throttled by speed/fps) ---
-            
-            # The visualizer's timer runs at ~100 FPS (10ms).
-            # self.fps is the target speed from the slider (e.g., 6 to 150).
-            # Calculate how many steps the animation should advance this frame.
-            # Aangepast: gebruik 100.0 om te matchen met de visualizer's 100 FPS timer
-            advance_steps = self.fps / 100.0 
-            self.frame_counter += advance_steps
-
-            if self.frame_counter >= 1.0:
-                steps_to_take = int(self.frame_counter)
-                self.frame_counter -= steps_to_take
-                
-                for _ in range(steps_to_take):
-                    self.position -= 1
-
-                    # Reset logic: reset if the meteor + tail is completely off screen
-                    if self.position + self.params.meteor_width < -self.max_sparkle_duration:
-                        self.position = float(self.num_leds - 1)
-                        self.sparkles.clear()
-
-                    # Sparkle creation
-                    sparkle_index = int(self.position) + self.params.meteor_width
-                    if 0 <= sparkle_index < self.num_leds:
-                        if random.randint(0, 100) < self.params.spark_intensity:
-                            self.sparkles[sparkle_index] = self.max_sparkle_duration
-
-            # --- Drawing Logic (every frame) ---
-            frame = [[0, 0, 0, 0]] * self.num_leds
-            brightness_factor = self.params.brightness / 100
-            r_base = self.params.color[0].red
-            g_base = self.params.color[0].green
-            b_base = self.params.color[0].blue
-
-            # Draw meteor
-            for i in range(self.params.meteor_width):
-                led_index = int(self.position) + i
-                if 0 <= led_index < self.num_leds:
-                    r = int(r_base * brightness_factor)
-                    g = int(g_base * brightness_factor)
-                    b = int(b_base * brightness_factor)
-                    # Gebruik de globale rgb_to_rgbw functie
-                    frame[led_index] = rgb_to_rgbw(r, g, b)
-
-            # Draw and fade sparks
-            keys_to_delete = []
-            for key, value in self.sparkles.items():
-                value -= 2 # Fade every frame (a bit faster)
-                if value <= 0:
-                    keys_to_delete.append(key)
-                    continue
-                
-                sparkle_brightness = value / self.max_sparkle_duration
-                sparkle_color_factor = brightness_factor * sparkle_brightness
-                
-                r = int(r_base * sparkle_color_factor)
-                g = int(g_base * sparkle_color_factor)
-                b = int(b_base * sparkle_color_factor)
-                
-                # Ensure the spark does not overwrite a brighter part of the meteor
-                if 0 <= key < self.num_leds and (frame[key][0] < r or frame[key][1] < g or frame[key][2] < b):
-                    # Gebruik de globale rgb_to_rgbw functie
-                    frame[key] = rgb_to_rgbw(r, g, b)
-
-                self.sparkles[key] = value
-
-            for key in keys_to_delete:
-                if key in self.sparkles:
-                    del self.sparkles[key]
-
-            return frame
-
-
-    class DummyMulticolorEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            self.initial_hsv_color = [0.0, 1.0, 1.0]
-        def get_next_frame(self):
-            import colorsys
-            brightness_factor = self.params.brightness / 100
-            red_hsv, green_hsv, blue_hsv = colorsys.hsv_to_rgb(*self.initial_hsv_color)
-            self.initial_hsv_color[0] = round(self.initial_hsv_color[0] + 0.01, 3)
-            if self.initial_hsv_color[0] > 1:
-                self.initial_hsv_color[0] = 0
-            red = int(red_hsv * 255 * brightness_factor)
-            green = int(green_hsv * 255 * brightness_factor)
-            blue = int(blue_hsv * 255 * brightness_factor)
-            # Gebruik de globale rgb_to_rgbw functie
-            return [rgb_to_rgbw(red, green, blue)] * self.num_leds
-
-    class DummyRunningLineEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            self.pos = 0
-        def get_next_frame(self):
-            line_width = self.params.line_width
-            bg_r = self.params.background_color.red
-            bg_g = self.params.background_color.green
-            bg_b = self.params.background_color.blue
-            
-            fg_r = self.params.color[0].red
-            fg_g = self.params.color[0].green
-            fg_b = self.params.color[0].blue
-            brightness_factor = self.params.brightness / 100.0
-
-            # Gebruik de globale rgb_to_rgbw functie
-            bg_rgbw = rgb_to_rgbw(bg_r, bg_g, bg_b)
-            fg_rgbw = rgb_to_rgbw(
-                int(fg_r * brightness_factor),
-                int(fg_g * brightness_factor),
-                int(fg_b * brightness_factor)
-            )
-
-            frame = [bg_rgbw] * self.num_leds
-            
-            if self.params.number_of_lines > 0:
-                # IMPORTANT: Integer division here. If self.num_leds is small and self.params.number_of_lines is large,
-                # 'gap' can become 0, causing lines to overlap.
-                spacing = self.num_leds / self.params.number_of_lines if self.params.number_of_lines > 0 else self.num_leds
-
-                # Update de frame teller
-                self.current_frame += (self.fps / 33.0) * 0.5 # Pas de snelheid aan op basis van FPS
-
-                for i in range(self.params.number_of_lines):
-                    # Bereken de startpositie van de huidige lijn, rekening houdend met de animatie
-                    # en de spacing tussen de lijnen.
-                    start_pos = int((self.current_frame + i * spacing)) % self.num_leds
-
-                    # Teken de lijn
-                    for width_offset in range(line_width):
-                        idx = (start_pos + width_offset) % self.num_leds
-                        if 0 <= idx < self.num_leds: # Dubbele controle voor de zekerheid
-                            frame[idx] = fg_rgbw
-            
-            return frame
-
-    class DummyChristmasSnowEffect(Effects):
-        def __init__(self, model):
-            self.bg_r, self.bg_g, self.bg_b = 0, 120, 0
-            self.sparkle_brightness = 255
-            self.fade_speed = 10
-            self.star_density = 20
-            self.led_states = []
-            super().__init__(model)
-
-        def _on_num_leds_change(self):
-            self.led_states = [[[self.bg_r, self.bg_g, self.bg_b], 0] for _ in range(self.num_leds)]
-
-        def handle_green_red(self, color, led):
-            r, g, b = color
-            red = max(self.bg_r, r - self.fade_speed) if r > self.bg_r else min(self.bg_r, r + self.fade_speed)
-            green = max(self.bg_g, g - self.fade_speed) if g > self.bg_g else min(self.bg_g, g + self.fade_speed)
-            blue = max(self.bg_b, b - self.fade_speed) if b > self.bg_b else min(self.bg_b, b + self.fade_speed)
-            self.led_states[led][0] = [red, green, blue]
-            if abs(red - self.bg_r) < 10 and abs(green - self.bg_g) < 10 and abs(blue - self.bg_b) < 10: # Changed from 5 to 10
-                self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0]
-            return red, green, blue
-
-        def get_next_frame(self):
-            frame = []
-            for led in range(self.num_leds):
-                color, type = self.led_states[led]
-                if type == 0:
-                    red, green, blue = self.bg_r, self.bg_g, self.bg_b
-                else:
-                    red, green, blue = self.handle_green_red(color, led)
-
-                if self.led_states[led][1] == 0 and random.randint(0, 100) < self.star_density:
-                    faded_green = self.bg_g - random.randint(60, 120)
-                    red_color = [[self.sparkle_brightness, 0, 0], 1]
-                    green_color = [[0, faded_green, 0], 2]
-                    white_color = [[self.sparkle_brightness, self.sparkle_brightness, self.sparkle_brightness], 3]
-                    
-                    white_chance = 100 - self.params.red_chance - self.params.dark_green_chance
-                    if white_chance < 0: white_chance = 0 # Ensure non-negative weight
-
-                    try:
-                        self.led_states[led] = random.choices(
-                            [red_color, green_color, white_color],
-                            weights=[self.params.red_chance, self.params.dark_green_chance, white_chance],
-                        )[0]
-                    except ValueError: # Handles case where all weights are zero
-                            self.led_states[led] = [[self.bg_r, self.bg_g, self.bg_b], 0]
-
-
-                brightness_mod = self.params.brightness / 100
-                adjusted_red = int(red * brightness_mod)
-                adjusted_green = int(green * brightness_mod)
-                adjusted_blue = int(blue * brightness_mod)
-                
-                # Gebruik de globale rgb_to_rgbw functie
-                r, g, b, w = rgb_to_rgbw(adjusted_red, adjusted_green, adjusted_blue)
-                frame.append([r, g, b, w])
-            return frame
-
-    class DummyFlagEffect(Effects):
-        def __init__(self, model):
-            super().__init__(model)
-            # self.position = 0 # No longer needed, use self.current_frame from base
-            # Ensure current_frame is initialized as float in base Effects class, which it is.
-
-        def get_next_frame(self):
-            frame = [[0, 0, 0, 0]] * self.num_leds
-            brightness_factor = self.params.brightness / 100
-            
-            # Update the frame counter based on FPS.
-            # De snelheid van de vlagbeweging is nu direct gekoppeld aan self.fps
-            # Deel door een kleinere waarde (bijv. 10.0) om het sneller te maken.
-            advance_steps = self.fps / 10.0 # Aangepast: kleinere deler voor snellere beweging
-            self.current_frame += advance_steps
-
-            # Ensure current_frame wraps around num_leds for continuous loop
-            current_base_position = int(self.current_frame) % self.num_leds
-
-            # Calculate the total width of the flag pattern.
-            total_flag_pattern_width = sum(self.params.width)
-
-            for led_idx in range(self.num_leds):
-                # Calculate the effective position within the repeating flag pattern
-                # This position shifts based on `current_base_position`
-                effective_pattern_pos = (led_idx - current_base_position + self.num_leds * 2) % total_flag_pattern_width
-                
-                # Find which color segment this effective_pattern_pos falls into
-                segment_start_offset = 0
-                found_color = None
-                for idx, width in enumerate(self.params.width):
-                    if effective_pattern_pos >= segment_start_offset and effective_pattern_pos < segment_start_offset + width:
-                        color_input = self.params.color[idx]
-                        scaled_red = int(color_input.red * brightness_factor)
-                        scaled_green = int(color_input.green * brightness_factor) 
-                        scaled_blue = int(color_input.blue * brightness_factor)
-                        # Gebruik de globale rgb_to_rgbw functie
-                        found_color = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
-                        break
-                    segment_start_offset += width
-                
-                if found_color:
-                    frame[led_idx] = found_color
-                else:
-                    # If no segment color found (e.g., due to rounding or gaps, though should not happen with proper widths)
-                    # or if it's the background part
-                    bg_r = self.params.background_color.red
-                    bg_g = self.params.background_color.green
-                    bg_b = self.params.background_color.blue
-                    # Gebruik de globale rgb_to_rgbw functie
-                    frame[led_idx] = rgb_to_rgbw(bg_r, bg_g, bg_b)
-        
-            return frame
-
-    # Dummy get_effect_class function
-    _effect_classes = {
-        "Static": DummyStaticEffect,
-        "Pulseline": DummyBreathingEffect, # Name in UI is Pulseline, class is BreathingEffect
-        "Knight Rider": DummyKnightRiderEffect,
-        "Meteor": DummyMeteorEffect,
-        "Multicolor": DummyMulticolorEffect,
-        "Running Line": DummyRunningLineEffect,
-        "Christmas Snow": DummyChristmasSnowEffect,
-        "Flag": DummyFlagEffect
-    }
-    def get_effect_class(effect_name): return _effect_classes.get(effect_name)
+    # This error handling is now more critical, as there are no more dummy implementations.
+    # If this happens, it means the effects cannot be found.
+    print(f"FATAL ERROR: Could not find actual 'utils' and 'effects' modules: {e}. Please ensure the 'effects' folder is a Python package and all files are correct.")
+    sys.exit(1) # Exit the application on a fatal import error
 
 
 class LEDVisualizer(QMainWindow):
@@ -596,7 +133,7 @@ class LEDVisualizer(QMainWindow):
 
         self.effect_index = 0
         self.default_brightness = 1.0
-        self.default_speed = 5
+        self.default_speed = 3 # Changed default speed to 3 (middle of 1-5)
         self.line_width = 5 # Default line width increased for better effect
         self.led_color = (255, 0, 0)
 
@@ -613,6 +150,9 @@ class LEDVisualizer(QMainWindow):
 
         # New global state for effect parameters
         self.current_global_effect_params = {} 
+
+        # Time tracking for delta_time calculation
+        self.last_frame_time = time.perf_counter()
 
         self.init_ui()
         self.push_undo_state()
@@ -665,10 +205,8 @@ class LEDVisualizer(QMainWindow):
         control_layout.addWidget(QLabel("Effect:"))
         self.effect_combo = QComboBox()
         
-        if '_effect_classes' in globals():
-            self.effect_names = list(globals()['_effect_classes'].keys())
-        else:
-            self.effect_names = ["Static", "Pulseline"]
+        # Use the actual effect classes now
+        self.effect_names = list(globals()['_effect_classes'].keys())
 
         self.effect_combo.addItems(self.effect_names)
         self.effect_combo.currentIndexChanged.connect(self.change_effect)
@@ -706,7 +244,7 @@ class LEDVisualizer(QMainWindow):
         extra_options_layout.addWidget(QPushButton("Exporteer MP4", clicked=self.export_video))
         extra_options_layout.addWidget(QPushButton("Roteer Links", clicked=lambda: self.rotate_image(-90)))
         extra_options_layout.addWidget(QPushButton("Roteer Rechts", clicked=lambda: self.rotate_image(90)))
-        extra_options_layout.addWidget(QPushButton("Wis Afbeelding", clicked=self.clear_image))
+        control_layout.addWidget(QPushButton("Wis Afbeelding", clicked=self.clear_image))
         control_layout.addWidget(QPushButton("Wis Alle Lijnen", clicked=self.clear_all_lines)) # Changed to clear_all_lines
 
         control_layout.addWidget(extra_options_group)
@@ -802,9 +340,18 @@ class LEDVisualizer(QMainWindow):
         self.update_drawing()
 
     def timer_update(self):
-        self.update_drawing()
+        # Calculate delta_time
+        current_time = time.perf_counter()
+        delta_time = current_time - self.last_frame_time
+        self.last_frame_time = current_time
+        self.update_drawing(delta_time=delta_time)
 
-    def update_drawing(self, force_next_frame=False):
+    def update_drawing(self, force_next_frame=False, delta_time: float = 0.0):
+        # If delta_time is not provided (e.g., direct call without timer), use a default.
+        # This is important for initial drawing or calls not from the timer.
+        if delta_time is None:
+            delta_time = 1.0 / 100.0 # Default to 100 FPS (10ms) if not specified
+
         # Remove actions that no longer exist
         current_action_ids = {action['id'] for action in self.actions}
         items_to_remove = [action_id for action_id in self.line_plot_items if action_id not in current_action_ids]
@@ -938,22 +485,21 @@ class LEDVisualizer(QMainWindow):
                 num_leds_for_this_line = action.get('num_leds_actual', 1)
 
                 effect_instance = self.effect_instances.get(action_id)
-                calculated_fps = int(100 * (current_speed / 5.0)) 
+                
                 if not effect_instance or action.get('reset_effect_state', False) or not isinstance(effect_instance, EffectClass):
                     params_instance = ParamsModel(**params_data)
-                    model = EffectModel(params=params_instance, frame_skip=0, fps=calculated_fps, num_leds=num_leds_for_this_line) 
+                    # Pass the current_speed directly to the model for effects to use
+                    model = EffectModel(params=params_instance, frame_skip=0, speed=current_speed, num_leds=num_leds_for_this_line) 
                     effect_instance = EffectClass(model)
                     self.effect_instances[action_id] = effect_instance
                     action['reset_effect_state'] = False
                 else:
                     effect_instance.params = ParamsModel(**params_data)
                     effect_instance.num_leds = num_leds_for_this_line
-                    effect_instance.fps = calculated_fps
+                    effect_instance.speed = current_speed # Update speed in the model
                 
-                if force_next_frame:
-                    frame_colors = effect_instance.get_next_frame()
-                else:
-                    frame_colors = effect_instance.get_next_frame()
+                # Pass delta_time to get_next_frame
+                frame_colors = effect_instance.get_next_frame(delta_time)
 
                 
                 # Ensure all colors in frame_colors are 4-element (R, G, B, W)
@@ -975,7 +521,7 @@ class LEDVisualizer(QMainWindow):
                 num_colors = len(processed_frame_colors)
                 if num_colors > 0:
                     for r_out, g_out, b_out, w_val in processed_frame_colors:
-                        # Converteer RGBW terug naar RGB voor weergave in PyQtGraph
+                        # Convert RGBW back to RGB for display in PyQtGraph
                         display_r = min(255, r_out + w_val)
                         display_g = min(255, g_out + w_val)
                         display_b = min(255, b_out + w_val)
@@ -1004,7 +550,7 @@ class LEDVisualizer(QMainWindow):
                     # Get RGBW components
                     r_out, g_out, b_out, w_val = (processed_frame_colors[i][0], processed_frame_colors[i][1], processed_frame_colors[i][2], processed_frame_colors[i][3]) if i < len(processed_frame_colors) else (0,0,0,0)
                     
-                    # Converteer RGBW terug naar RGB voor weergave in PyQtGraph
+                    # Convert RGBW back to RGB for display in PyQtGraph
                     display_r = min(255, r_out + w_val)
                     display_g = min(255, g_out + w_val)
                     display_b = min(255, b_out + w_val)
@@ -1144,8 +690,8 @@ class LEDVisualizer(QMainWindow):
         if self.original_image is None:
             return
         
-        # Dit is de originele, eenvoudige helderheidsaanpassing.
-        # De 'avondmodus' is teruggedraaid zoals eerder besproken.
+        # This is the original, simple brightness adjustment.
+        # The 'evening mode' has been reverted as discussed earlier.
         brightness_factor = 1.0 - (value / 100.0)
         self.image = self.original_image.copy()
         
@@ -1223,7 +769,7 @@ class LEDVisualizer(QMainWindow):
     def undo_action(self):
         try:
             if len(self.undo_stack) <= 1:
-                return  # Geen popup
+                return  # No popup
 
             current_state = self.undo_stack.pop()
             self.redo_stack.append(current_state)
@@ -1243,13 +789,13 @@ class LEDVisualizer(QMainWindow):
             self.update_ui_for_selected_action()
 
         except Exception as e:
-            print(f"[FOUT bij undo_action]: {e}")
+            print(f"[ERROR in undo_action]: {e}")
 
 
 
     def redo_action(self):
         if not self.redo_stack:
-            return  # Geen popup of statusmelding als er niets is
+            return  # No popup or status message if there's nothing to redo
 
         try:
             next_state = self.redo_stack.pop()
@@ -1258,23 +804,23 @@ class LEDVisualizer(QMainWindow):
             self.clear_all_lines(False)
             self.actions = copy.deepcopy(next_state)
 
-            # Effect opnieuw activeren
+            # Re-activate effect
             for action in self.actions:
                 action["reset_effect_state"] = True
                 action["recalculate_resample"] = True
 
-            # ✅ Herstel globale effectinstellingen uit laatst herstelde actie
+            # ✅ Restore global effect settings from last restored action
             for action in reversed(self.actions):
                 if "effect_name" in action:
                     effect_name = action["effect_name"]
 
-                    # Zet de dropdown zonder signalen te triggeren
+                    # Set the dropdown without triggering signals
                     if effect_name in self.effect_names:
                         self.effect_combo.blockSignals(True)
                         self.effect_combo.setCurrentIndex(self.effect_names.index(effect_name))
                         self.effect_combo.blockSignals(False)
 
-                    # Herstel globale effectinstellingen
+                    # Restore global effect settings
                     self.current_global_effect_params = {
                         key: action[key]
                         for key in action
@@ -1287,11 +833,11 @@ class LEDVisualizer(QMainWindow):
             self.update_drawing()
             self.update_ui_for_selected_action()
 
-            # Optioneel: melding uitzetten als je het fluisterstil wilt
-            # self.show_status_message("Laatste actie opnieuw uitgevoerd.")
+            # Optional: turn off message if you want it silent
+            # self.show_status_message("Last action redone.")
 
         except Exception as e:
-            print(f"[FOUT bij redo_action]: {e}")
+            print(f"[ERROR in redo_action]: {e}")
 
 
 
@@ -1450,43 +996,43 @@ class LEDVisualizer(QMainWindow):
         pos = self.plot_widget.getViewBox().mapSceneToView(event.pos())
         point = (pos.x(), pos.y())
 
-        # Haal de momenteel geselecteerde effectnaam op
+        # Get the currently selected effect name
         selected_effect_name = self.effect_combo.currentText()
 
-        # Initialiseer basis actie data met globale parameters
+        # Initialize base action data with global parameters
         base_action_data = {
             "id": str(uuid.uuid4()),
             "points": [point],
             "color": self.led_color,
             'reset_effect_state': True,
             'recalculate_resample': True,
-            'effect_name': selected_effect_name, # Altijd het geselecteerde effect toepassen
-            'mode': "Effect" # Standaard nieuwe lijnen als effecten behandelen
+            'effect_name': selected_effect_name, # Always apply the selected effect
+            'mode': "Effect" # Default new lines as effects
         }
-        # Kopieer alle huidige globale effectparameters naar de nieuwe actie
+        # Copy all current global effect parameters to the new action
         base_action_data.update(copy.deepcopy(self.current_global_effect_params))
 
 
         if self.draw_mode == "Vrij Tekenen":
             self.drawing = True
             self.current_action = base_action_data
-            self.show_status_message("Vrij tekenen gestart met geselecteerd effect.")
+            self.show_status_message("Free drawing started with selected effect.")
         elif self.draw_mode == "Lijn Tekenen":
             if not self.line_drawing_first_click:
                 self.drawing = True
                 self.line_drawing_first_click = True
                 base_action_data["points"] = [point, point]
-                # BELANGRIJKE WIJZIGING HIER:
-                # Stel de modus in op "Effect" zodat het effect direct wordt toegepast.
+                # IMPORTANT CHANGE HERE:
+                # Set the mode to "Effect" so the effect is applied immediately.
                 base_action_data['mode'] = "Effect" 
                 self.current_action = base_action_data
-                self.show_status_message("Startpunt van lijn geselecteerd.")
+                self.show_status_message("Start point of line selected.")
             else:
                 if self.current_action:
-                    # Hier hoeven we de modus niet opnieuw in te stellen, die is al "Effect"
+                    # No need to reset the mode here, it's already "Effect"
                     self.actions.append(self.current_action)
                     self.push_undo_state()
-                    self.show_status_message("Lijn voltooid.")
+                    self.show_status_message("Line completed.")
                 self.current_action, self.drawing, self.line_drawing_first_click = None, False, False
         elif self.draw_mode == "Lijn Bewerken":
             self.selected_action_index = -1
@@ -1521,9 +1067,9 @@ class LEDVisualizer(QMainWindow):
             if self.selected_action_index != -1:
                 self.drawing = True
                 self.drag_start_pos = point
-                self.show_status_message(f"Lijn {self.selected_action_index + 1} geselecteerd voor bewerken.")
+                self.show_status_message(f"Line {self.selected_action_index + 1} selected for editing.")
             else:
-                self.show_status_message("Geen lijn of punt geselecteerd.")
+                self.show_status_message("No line or point selected.")
 
             self.update_ui_for_selected_action()
         self.update_drawing()
@@ -1560,15 +1106,15 @@ class LEDVisualizer(QMainWindow):
         if self.drawing:
             if self.draw_mode == "Vrij Tekenen" and self.current_action:
                 if len(self.current_action["points"]) > 1:
-                    # VERWIJDER DEZE REGEL: self.current_action['mode'] = self.draw_mode
+                    # REMOVE THIS LINE: self.current_action['mode'] = self.draw_mode
                     self.actions.append(self.current_action)
                     self.push_undo_state()
-                    self.show_status_message("Vrij tekenen voltooid.")
+                    self.show_status_message("Free drawing completed.")
                 else:
-                    self.show_status_message("Lijn te kort om op te slaan.")
+                    self.show_status_message("Line too short to save.")
             elif self.draw_mode == "Lijn Bewerken" and self.selected_action_index != -1:
                 self.push_undo_state()
-                self.show_status_message("Lijnbewerking voltooid.")
+                self.show_status_message("Line editing completed.")
 
         self.drawing = False
         self.drag_start_pos = None
@@ -1695,46 +1241,46 @@ class LEDVisualizer(QMainWindow):
         actions_to_modify = []
         if self.selected_action_index != -1:
             actions_to_modify.append(self.actions[self.selected_action_index])
-            self.show_status_message(f"Parameter '{param_name}' van geselecteerde lijn ingesteld op: {value}")
+            self.show_status_message(f"Parameter '{param_name}' of selected line set to: {value}")
         elif self.drawing and self.current_action:
             actions_to_modify.append(self.current_action)
-            self.show_status_message(f"Parameter '{param_name}' van tekenende lijn ingesteld op: {value}")
+            self.show_status_message(f"Parameter '{param_name}' of drawing line set to: {value}")
         else:
             # Global update: apply to all existing actions
             actions_to_modify = self.actions
-            self.show_status_message(f"Globale parameter '{param_name}' ingesteld op: {value} voor alle lijnen.")
+            self.show_status_message(f"Global parameter '{param_name}' set to: {value} for all lines.")
 
         if not actions_to_modify:
             self.update_drawing()
             return
 
         for target_action in actions_to_modify:
-            # Altijd de effectnaam instellen op de huidige selectie uit de keuzelijst
+            # Always set the effect name to the current selection from the dropdown
             target_action['effect_name'] = self.effect_combo.currentText()
             
-            # Update de specifieke parameter die wordt gewijzigd
-            # Dit is de belangrijke wijziging: update alleen de *specifieke* parameter
-            # die deze functieaanroep heeft geactiveerd.
+            # Update the specific parameter being changed
+            # This is the important change: only update the *specific* parameter
+            # that triggered this function call.
             if param_name.startswith("color_"):
-                # Als een specifieke kleurcomponent wordt gewijzigd (bijv. color_0 voor Vlag)
+                # If a specific color component is being changed (e.g., color_0 for Flag)
                 if target_action['effect_name'] == "Flag":
                     if 'color' not in target_action or not isinstance(target_action['color'], list):
-                        target_action['color'] = [(255,255,255)] * 3 # Initialiseer indien niet aanwezig
+                        target_action['color'] = [(255,255,255)] * 3 # Initialize if not present
                     while len(target_action['color']) <= color_idx:
                         target_action['color'].append((255,255,255))
                     target_action['color'][color_idx] = value
                 else:
-                    # Voor effecten met één kleur, update direct de hoofdkleur
-                    # Dit zou idealiter worden afgehandeld door choose_led_color, maar voor robuustheid
-                    target_action['color'] = value # Aannemende dat 'value' een (R,G,B) tuple is
+                    # For effects with a single color, update the main color directly
+                    # This should ideally be handled by choose_led_color, but for robustness
+                    target_action['color'] = value # Assuming 'value' is an (R,G,B) tuple
             elif param_name == "background_color":
                 target_action['background_color'] = value
-            elif param_name == "color": # Dit is voor de hoofd LED kleurkiezer (choose_led_color roept deze niet aan met 'color')
-                 # Deze tak zou alleen geactiveerd moeten worden als 'param_name' daadwerkelijk 'color' is.
-                 # De 'choose_led_color' functie handelt dit al direct af op de 'actions' lijst.
-                 # Dus, in de praktijk zal deze tak zelden of nooit worden uitgevoerd door UI-interactie met sliders.
+            elif param_name == "color": # This is for the main LED color picker (choose_led_color doesn't call this with 'color')
+                 # This branch should only be activated if 'param_name' is actually 'color'.
+                 # The 'choose_led_color' function already handles this directly on the 'actions' list.
+                 # So, in practice, this branch will rarely or never be executed by UI interaction with sliders.
                  target_action['color'] = value
-            elif param_name.startswith("width_"): # Voor Vlag breedtes
+            elif param_name.startswith("width_"): # For Flag widths
                 width_idx = int(param_name.split('_')[1])
                 if 'width' not in target_action or not isinstance(target_action['width'], list):
                     target_action['width'] = [10] * 3
@@ -1742,13 +1288,13 @@ class LEDVisualizer(QMainWindow):
                     target_action['width'].append(10)
                 target_action['width'][width_idx] = value
             else:
-                # Voor niet-kleur, niet-breedte parameters (zoals line_length, meteor_width, brightness, speed)
-                # Update direct de target_action met de waarde.
+                # For non-color, non-width parameters (like line_length, meteor_width, brightness, speed)
+                # Update the target_action directly with the value.
                 target_action[param_name] = value
 
-            # Altijd markeren voor reset en herberekening
+            # Always mark for reset and recalculation
             target_action['reset_effect_state'] = True
-            target_action['recalculate_resample'] = True # Zorgt voor resampling indien nodig (bijv. line_length verandert)
+            target_action['recalculate_resample'] = True # Ensures resampling if needed (e.g., line_length changes)
 
         self.update_drawing()
 
@@ -1771,7 +1317,7 @@ class LEDVisualizer(QMainWindow):
 
         if selected_effect_name == "Knight Rider":
             default_val = params_to_display.get('line_length', 10) 
-            # Aangepast: Verhoogd maximum van 50 naar 100 voor 'Line Length'
+            # Adjusted: Increased maximum from 50 to 100 for 'Line Length'
             slider = self._add_slider("Line Length", "line_length", 1, 100, default_val) 
             slider.blockSignals(True); slider.setValue(default_val); slider.blockSignals(False)
         
@@ -1834,56 +1380,48 @@ class LEDVisualizer(QMainWindow):
     
     def _capture_and_crop_frame(self):
         """
-        Legt een screenshot van de plot vast en exporteert deze.
-        Deze functie past dynamisch de weergave aan de inhoud (afbeelding + lijnen) aan
-        en legt vervolgens het frame vast, zodat de exportresolutie volledig gevuld is.
-        Eventuele lege ruimte wordt gevuld met een zwarte achtergrond.
+        Legt de huidige weergave vast, schaalt deze correct, en voegt een verkleind watermark toe.
         """
+        from PyQt5.QtGui import QPainter, QPixmap, QColor, QImage
+        from PyQt5.QtCore import QSize, QRectF, Qt
+
         if not self.image_item and not self.actions:
-            QMessageBox.warning(self, "Export Fout", "Geen afbeelding of lijnen geladen om te exporteren!")
+            QMessageBox.warning(self, "Export Fout", "Geen afbeelding of lijnen geladen om te exporteren.")
             return None
 
         QApplication.processEvents()
 
-        # Dynamisch aanpassen van exportbreedte en -hoogte aan de afbeelding
-        # Dit definieert de *doelresolutie* van de output video/afbeelding
         if self.original_image is not None:
             img_height, img_width, _ = self.original_image.shape
             EXPORT_WIDTH = img_width
             EXPORT_HEIGHT = img_height
         else:
-            # Fallback naar standaardresolutie als er geen afbeelding is geladen
             EXPORT_WIDTH = 1920
             EXPORT_HEIGHT = 1080
 
         target_qimage_size = QSize(EXPORT_WIDTH, EXPORT_HEIGHT)
-
-        # Creëer een QPixmap direct en vul deze met zwart
         pixmap = QPixmap(target_qimage_size)
-        pixmap.fill(QColor(0, 0, 0)) # Vul de QPixmap expliciet met zwart
+        pixmap.fill(QColor(0, 0, 0))
 
-        painter = QPainter(pixmap) # Teken op de QPixmap
-        
+        painter = QPainter(pixmap)
         view_box = self.plot_widget.getViewBox()
-        plot_item = self.plot_widget.getPlotItem() # Haal het plotItem op
+        plot_item = self.plot_widget.getPlotItem()
         
-        original_x_range, original_y_range = view_box.viewRange() # Bewaar het originele weergavebereik
+        original_x_range, original_y_range = view_box.viewRange()
 
         try:
             painter.setRenderHint(QPainter.Antialiasing)
-            scene = plot_item.scene() # Gebruik plot_item.scene() direct
+            scene = plot_item.scene()
 
-            # Bepaal de initiële inhoudsgrenzen op basis van de afbeelding (indien aanwezig)
+            # Deze logica berekent de grenzen van alle content (afbeelding + lijnen)
+            # en zorgt ervoor dat alles precies in het beeld past.
             if self.original_image is not None:
-                # Gebruik de afmetingen van de geladen afbeelding als startpunt
                 content_x_min, content_x_max = 0.0, float(img_width)
                 content_y_min, content_y_max = 0.0, float(img_height)
             else:
-                # Als er geen afbeelding is, begin dan met een lege set coördinaten
                 content_x_min, content_x_max = float('inf'), float('-inf')
                 content_y_min, content_y_max = float('inf'), float('-inf')
 
-            # Breid de grenzen uit met alle lijnpunten
             for action in self.actions:
                 for p in action['points']:
                     content_x_min = min(content_x_min, p[0])
@@ -1891,93 +1429,48 @@ class LEDVisualizer(QMainWindow):
                     content_y_min = min(content_y_min, p[1])
                     content_y_max = max(content_y_max, p[1])
             
-            # Als er nog steeds geen inhoud is (geen afbeelding en geen lijnen), retourneer None
-            if content_x_min == float('inf') or content_y_min == float('inf'):
+            if content_x_min == float('inf'): # Simpele check is voldoende
+                painter.end()
                 return None
 
-            # Voeg GEEN buffermarge toe voor "Fill Screen" om maximale vulling te garanderen
-            buffer_pixel_margin = 0 # <-- Gewijzigd naar 0
+            content_width = (content_x_max - content_x_min) or 1.0
+            content_height = (content_y_max - content_y_min) or 1.0
+
+            scale = max(EXPORT_WIDTH / content_width, EXPORT_HEIGHT / content_height)
+            view_width, view_height = EXPORT_WIDTH / scale, EXPORT_HEIGHT / scale
+            center_x, center_y = content_x_min + content_width / 2, content_y_min + content_height / 2
             
-            content_x_min -= buffer_pixel_margin
-            content_x_max += buffer_pixel_margin
-            content_y_min -= buffer_pixel_margin
-            content_y_max += buffer_pixel_margin
-
-            content_width = content_x_max - content_x_min
-            content_height = content_y_max - content_y_min
-            
-            # Zorg ervoor dat de inhoudsbreedte en -hoogte niet nul of negatief zijn
-            if content_width <= 0: content_width = 1.0 # Minimum 1 pixel
-            if content_height <= 0: content_height = 1.0 # Minimum 1 pixel
-
-            # Bereken de schaalfactor om de inhoud in de exportafmetingen te vullen.
-            # We gebruiken 'max' om ervoor te zorgen dat de video volledig gevuld is,
-            # wat zal resulteren in bijsnijden als de beeldverhouding van de inhoud
-            # niet overeenkomt met de beeldverhouding van de exportresolutie.
-            scale_x = EXPORT_WIDTH / content_width
-            scale_y = EXPORT_HEIGHT / content_height
-            scale = max(scale_x, scale_y) # Dit is de "Fill Screen" logica
-
-            # Bereken de werkelijke weergaveafmetingen (in de plot-coördinaten) die nodig zijn
-            # om de geschaalde inhoud te bevatten en de exportbeeldverhouding te vullen.
-            view_width = EXPORT_WIDTH / scale
-            view_height = EXPORT_HEIGHT / scale
-
-            # Centreer de inhoud binnen de berekende weergaveafmetingen
-            center_x = content_x_min + content_width / 2
-            center_y = content_y_min + content_height / 2
-
             final_x_min = center_x - view_width / 2
             final_x_max = center_x + view_width / 2
             final_y_min = center_y - view_height / 2
             final_y_max = center_y + view_height / 2
 
-            # Stel de view box in op het berekende bereik
             view_box.setRange(xRange=(final_x_min, final_x_max), yRange=(final_y_min, final_y_max), padding=0)
-
-            # Render de scène naar de QPixmap
+            QApplication.processEvents()
+            
             scene.render(painter, QRectF(pixmap.rect()), view_box.viewRect())
 
-            # --- Watermerk toevoegen ---
-            # Laad het watermerk
+            # --- WATERMARK LOGICA (VERBETERD) ---
             watermark_path = os.path.join(script_dir, "images", "pulseline1.png")
-            try:
+            if os.path.exists(watermark_path):
                 watermark_image = QImage(watermark_path)
-                if watermark_image.isNull():
-                    print(f"WAARSCHUWING: Watermerk afbeelding niet gevonden of kon niet worden geladen: {watermark_path}")
-                else:
-                    # Bepaal de positie linksonder
-                    # Watermerk breedte en hoogte
-                    wm_width = watermark_image.width()
-                    wm_height = watermark_image.height()
+                if not watermark_image.isNull():
+                    # Schaal het watermark naar 8% van de videohoogte
+                    target_height = int(EXPORT_HEIGHT * 0.08)
+                    scaled_watermark = watermark_image.scaledToHeight(target_height, Qt.SmoothTransformation)
 
-                    # Marges vanaf de onderkant en linkerkant van de exportafbeelding
-                    margin = 20 # Pixels vanaf de rand
-
-                    # Bereken de X en Y coördinaten voor de linksonderhoek van het watermerk
-                    # De Y-coördinaat moet worden aangepast omdat QPainter (0,0) linksboven is
-                    # en we willen dat het watermerk op de bodem verschijnt.
-                    # De hoogte van de pixmap is EXPORT_HEIGHT.
+                    # Plaats het geschaalde watermark linksonder met een marge
+                    margin = 20
                     wm_x = margin
-                    wm_y = EXPORT_HEIGHT - wm_height - margin
-
-                    # Teken het watermerk op de pixmap
-                    painter.drawImage(wm_x, wm_y, watermark_image)
-            except Exception as e:
-                print(f"FOUT: Kan watermerk niet toevoegen: {e}")
-            # --- Einde Watermerk ---
+                    wm_y = EXPORT_HEIGHT - scaled_watermark.height() - margin
+                    painter.drawImage(wm_x, wm_y, scaled_watermark)
 
         finally:
             painter.end()
-            # Herstel het originele weergavebereik.
             view_box.setRange(xRange=original_x_range, yRange=original_y_range, padding=0)
-            self.update_drawing() # Zorg ervoor dat de liveweergave correct wordt bijgewerkt na herstel
-
-        # Converteer QPixmap naar QImage, en vervolgens naar NumPy array
+            
         qimage_result = pixmap.toImage()
-        if qimage_result.isNull():
-            print("WAARSUWING: Renderen van de scène naar QImage mislukt.")
-            return None
+        if qimage_result.isNull(): return None
 
         buffer = qimage_result.constBits()
         buffer.setsize(qimage_result.sizeInBytes())
@@ -1985,7 +1478,6 @@ class LEDVisualizer(QMainWindow):
         
         arr_rgba = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
         pil_image = Image.fromarray(arr_rgba, 'RGBA')
-
         return pil_image
 
 
@@ -2012,20 +1504,20 @@ class LEDVisualizer(QMainWindow):
                     if not file_path.lower().endswith('.png'):
                         file_path += '.png'
 
-                    # Stap 1: exporteer afbeelding zonder watermerk
+                    # Step 1: export image without watermark
                     exporter.export(file_path)
 
-                    # Stap 2: laad afbeelding opnieuw in met OpenCV
+                    # Step 2: reload image with OpenCV
                     image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
                     if image is None:
-                        self.show_status_message("Fout bij het openen van de afbeelding voor watermerk.")
+                        self.show_status_message("Error opening image for watermark.")
                         return
 
-                    # Zorg dat afbeelding 4 kanalen heeft
+                    # Ensure image has 4 channels
                     if image.shape[2] == 3:
                         image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
 
-                    # Laad het watermerk
+                    # Load the watermark
                     logo = cv2.imread("images/pulseline1.png", cv2.IMREAD_UNCHANGED)
                     if logo is not None and logo.shape[2] == 4:
                         target_height = int(image.shape[0] * 0.1)
@@ -2046,17 +1538,17 @@ class LEDVisualizer(QMainWindow):
                         blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
                         image[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1], :3] = blended
 
-                    # Zet eventueel terug naar BGR (zonder alpha)
+                    # Convert back to BGR (without alpha) if needed
                     if image.shape[2] == 4:
                         image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
 
-                    # Sla overschreven afbeelding op met watermerk
+                    # Save overwritten image with watermark
                     cv2.imwrite(file_path, image)
 
-                    self.show_status_message(f"Afbeelding opgeslagen met watermerk: {file_path}")
+                    self.show_status_message(f"Image saved with watermark: {file_path}")
 
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", f"Fout bij opslaan afbeelding: {e}")
+                QMessageBox.critical(self, "Export Error", f"Error saving image: {e}")
 
 
 
@@ -2064,36 +1556,30 @@ class LEDVisualizer(QMainWindow):
         import os
         import cv2
         import numpy as np
+        from PyQt5.QtGui import QImage, QPainter
 
         if self.original_image is None:
-            self.show_status_message("Geen afbeelding geladen.")
+            self.show_status_message("Geen afbeelding geladen om te exporteren.")
             return
 
-        # Resolutie uit originele afbeelding
-        height, width, _ = self.original_image.shape
-        export_width = width
-        export_height = height
+        # Gebruik de resolutie van de afbeelding voor de export.
+        img_height, img_width, _ = self.original_image.shape
+        export_width = img_width
+        export_height = img_height
 
-        # Exportinstellingen
+        # Video-instellingen.
         fps = 30
         duration_seconds = 10
         total_frames = fps * duration_seconds
-        frame_interval_ms = 1000 / fps
+        delta_time_per_frame = 1.0 / fps
 
-        # Effectupdate-interval: Dit bepaalt hoe vaak de effectlogica wordt bijgewerkt.
-        effect_interval_ms = 250 
-        
-        # Bereken hoeveel video frames er moeten verstrijken voordat het effect wordt bijgewerkt.
-        effect_frame_target = max(1, round(effect_interval_ms / frame_interval_ms))
-
-        effect_frame_counter = 0
-
-        # Bestandslocatie
         output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
         if not output_path:
             return
+        if not output_path.lower().endswith('.mp4'):
+            output_path += '.mp4'
 
-        # Voortgangsvenster
+        # Voortgangsvenster.
         progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
         progress.setWindowTitle("Exporteren")
         progress.setWindowModality(Qt.WindowModal)
@@ -2101,125 +1587,262 @@ class LEDVisualizer(QMainWindow):
         progress.setAutoReset(False)
         progress.setMinimumWidth(400)
         progress.setMinimumDuration(0)
-        progress.show()
-        QApplication.processEvents()
-
-        # Video-writer
-        # Aangepaste codec naar 'AVC1' (een alias voor H.264) voor betere compatibiliteit.
-        # Dit probeert de codec te gebruiken die FFMPEG als fallback noemde.
-        fourcc = cv2.VideoWriter_fourcc(*'AVC1') 
-        video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
-
-        # Controleer of de videowriter succesvol is geopend
-        if not video_writer.isOpened():
-            self.show_status_message("Fout: Kan videobestand niet openen. Controleer of FFMPEG correct is geïnstalleerd en de 'AVC1' codec wordt ondersteund.")
-            # Extra debuginformatie in de console, omdat de OpenH264-fout aanhoudt.
-            print("\n--- DEBUG INFO ---")
-            print("Mogelijke oorzaken:")
-            print("1. De 'AVC1' codec is niet beschikbaar of compatibel met jouw FFMPEG/OpenCV installatie.")
-            print("2. Er is een probleem met de OpenH264 bibliotheek (zoals de foutmelding suggereert).")
-            print("   Probeer de bibliotheek handmatig te downloaden en in de juiste map te plaatsen, zoals aangegeven in de foutmelding: https://github.com/cisco/openh264/releases")
-            print("   Zorg ervoor dat de versie overeenkomt met wat OpenCV verwacht.")
-            print("3. Probeer een andere FourCC code zoals 'H264'.")
-            print("--- EINDE DEBUG INFO ---\n")
-            return
-
-        for frame_idx in range(total_frames):
-            if progress.wasCanceled():
-                video_writer.release()
-                if os.path.exists(output_path):
-                    os.remove(output_path)
-                self.show_status_message("Export geannuleerd.")
-                return
-
-            # Simuleer QTimer door elke X frames een effect-update
-            # Als effect_frame_target 1 is, wordt dit elke frame uitgevoerd.
-            if effect_frame_counter == 0:
-                self.update_drawing(force_next_frame=True)
-
-            effect_frame_counter = (effect_frame_counter + 1) % effect_frame_target
-
-            # Frame renderen
-            frame = self.render_frame_to_image(export_width, export_height)
-
-            # RGBA naar BGR
-            if frame.shape[2] == 4:
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
-            else:
-                frame_bgr = frame
-
-            # Laad het watermerk
-            logo = cv2.imread("images/pulseline1.png", cv2.IMREAD_UNCHANGED)  # Laad met alpha-kanaal
-
-            if logo is not None:
-                # Schaal het watermerk naar 10% van videohoogte
-                target_height = int(frame_bgr.shape[0] * 0.1)
-                scale_factor = target_height / logo.shape[0]
-                logo_resized = cv2.resize(logo, (int(logo.shape[1] * scale_factor), target_height), interpolation=cv2.INTER_AREA)
-
-                # Positie linksonder
-                x_offset = 12
-                y_offset = frame_bgr.shape[0] - logo_resized.shape[0] - 12
-
-                # Overlay: split in BGR en Alpha
-                if logo_resized.shape[2] == 4:
-                    overlay = logo_resized[..., :3]
-                    mask = logo_resized[..., 3:] / 255.0
-                    roi = frame_bgr[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1]]
-                    blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
-                    frame_bgr[y_offset:y_offset + overlay.shape[0], x_offset:x_offset + overlay.shape[1]] = blended
-
-            # Schrijf frame met watermerk
-            video_writer.write(frame_bgr)
-
-            progress.setValue(frame_idx + 1)
+        
+        # Pauzeer de live-timer.
+        self.timer.stop()
+        
+        try:
+            progress.show()
             QApplication.processEvents()
 
-        video_writer.release()
-        progress.close()
-        self.show_status_message(f"Video geëxporteerd naar: {output_path}")
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
 
+            if not video_writer.isOpened():
+                self.show_status_message("Fout: Kon videobestand niet openen.")
+                return
 
-    def render_frame_to_image(self, width, height):
-        from PyQt5.QtGui import QImage, QPainter
-        import numpy as np
+            # Reset effecten voor een schone start.
+            for action in self.actions:
+                action['reset_effect_state'] = True
+            self.update_drawing(delta_time=0.0)
 
-        self.update_drawing(force_next_frame=True)
+            # Bewaar de originele staat van de widget.
+            original_size = self.plot_widget.size()
+            view_box = self.plot_widget.getViewBox()
+            original_range = view_box.viewRange()
+
+            # Dwing de widget naar de juiste staat voor renderen.
+            self.plot_widget.resize(export_width, export_height)
+            view_box.setRange(xRange=(0, export_width), yRange=(0, export_height), padding=0)
+            
+            for frame_idx in range(total_frames):
+                if progress.wasCanceled():
+                    break
+
+                # 1. Update de animatie.
+                self.update_drawing(delta_time=delta_time_per_frame, force_next_frame=True)
+                QApplication.processEvents() # Geef tijd om de update te verwerken.
+
+                # 2. Render het frame (directe methode).
+                image = QImage(export_width, export_height, QImage.Format_RGBA8888)
+                image.fill(0)
+                painter = QPainter(image)
+                self.plot_widget.render(painter)
+                painter.end()
+
+                # Converteer QImage naar NumPy array.
+                ptr = image.bits()
+                ptr.setsize(image.byteCount())
+                frame_rgba = np.array(ptr).reshape((export_height, export_width, 4))
+                frame_bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
+                
+                # 3. Voeg het watermerk toe met OpenCV.
+                logo_path = os.path.join(script_dir, "images", "pulseline1.png")
+                if os.path.exists(logo_path):
+                    logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
+                    if logo is not None:
+                        target_height = int(export_height * 0.05) # 5% van de hoogte.
+                        scale_factor = target_height / logo.shape[0]
+                        new_width = int(logo.shape[1] * scale_factor)
+                        logo_resized = cv2.resize(logo, (new_width, target_height), interpolation=cv2.INTER_AREA)
+
+                        margin = 20
+                        x_offset = margin
+                        y_offset = export_height - logo_resized.shape[0] - margin
+
+                        overlay = logo_resized[..., :3]
+                        mask = logo_resized[..., 3:] / 255.0
+                        
+                        roi = frame_bgr[y_offset:y_offset + target_height, x_offset:x_offset + new_width]
+                        blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
+                        frame_bgr[y_offset:y_offset + target_height, x_offset:x_offset + new_width] = blended
+
+                # Schrijf het frame naar de video.
+                video_writer.write(frame_bgr)
+                progress.setValue(frame_idx + 1)
+
+            video_writer.release()
+            
+            if progress.wasCanceled():
+                if os.path.exists(output_path): os.remove(output_path)
+                self.show_status_message("Export geannuleerd.")
+            else:
+                self.show_status_message(f"Video succesvol geëxporteerd naar: {output_path}")
+
+        finally:
+            # Herstel de widget en de live-timer altijd.
+            progress.close()
+            self.plot_widget.resize(original_size)
+            self.plot_widget.getViewBox().setRange(xRange=original_range[0], yRange=original_range[1])
+            self.timer.start(10)
+            import os
+            import cv2
+            import numpy as np
+
+            if not self.image_item and not self.actions:
+                self.show_status_message("Geen afbeelding of lijnen geladen om te exporteren.")
+                QMessageBox.warning(self, "Export Fout", "Geen afbeelding of lijnen geladen om te exporteren.")
+                return
+
+            if self.original_image is not None:
+                height, width, _ = self.original_image.shape
+                export_width = width
+                export_height = height
+            else:
+                export_width = 1920
+                export_height = 1080
+
+            fps = 30
+            duration_seconds = 10
+            total_frames = fps * duration_seconds
+            delta_time_per_frame = 1.0 / fps 
+
+            output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
+            if not output_path:
+                return
+            if not output_path.lower().endswith('.mp4'):
+                output_path += '.mp4'
+
+            progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
+            progress.setWindowTitle("Exporteren")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
+            progress.setMinimumWidth(400)
+            progress.setMinimumDuration(0)
+            
+            # TOEGEVOEGD: Pauzeer de live timer
+            self.timer.stop()
+            
+            try:
+                progress.show()
+                QApplication.processEvents()
+
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
+
+                if not video_writer.isOpened():
+                    # ... (error handling blijft hetzelfde) ...
+                    return
+
+                for action in self.actions:
+                    action['reset_effect_state'] = True
+                self.update_drawing(delta_time=0.0)
+
+                for frame_idx in range(total_frames):
+                    if progress.wasCanceled():
+                        break
+
+                    self.update_drawing(delta_time=delta_time_per_frame, force_next_frame=True)
+                    pil_image = self._capture_and_crop_frame()
+
+                    if pil_image:
+                        frame_rgba = np.array(pil_image)
+                        frame_bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
+                        video_writer.write(frame_bgr)
+
+                    progress.setValue(frame_idx + 1)
+                    QApplication.processEvents()
+
+                video_writer.release()
+                
+                if progress.wasCanceled():
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                    self.show_status_message("Export geannuleerd.")
+                else:
+                    self.show_status_message(f"Video succesvol geëxporteerd naar: {output_path}")
+
+            finally:
+                # TOEGEVOEGD: Start de live timer altijd opnieuw, wat er ook gebeurt.
+                progress.close()
+                self.timer.start(10)
+
+            
+        
+    def _capture_and_crop_frame(self):
+        """
+        Legt de huidige weergave vast, zorgt dat de afbeelding het volledige frame vult,
+        en voegt een correct geschaald watermerk toe.
+        """
+        from PyQt5.QtGui import QPainter, QPixmap, QColor, QImage
+        from PyQt5.QtCore import QSize, QRectF, Qt
+
+        # Vereist een afbeelding om de kadrering en resolutie te bepalen.
+        if self.original_image is None:
+            QMessageBox.warning(self, "Export Fout", "Export vereist een geladen afbeelding om de resolutie te bepalen.")
+            return None
+
         QApplication.processEvents()
 
-        # Bewaar originele grootte van de widget
-        original_size = self.plot_widget.size()
+        # Gebruik de resolutie van de afbeelding voor de export.
+        img_height, img_width, _ = self.original_image.shape
+        EXPORT_WIDTH = img_width
+        EXPORT_HEIGHT = img_height
 
-        # 🛑 Zet visuele updates tijdelijk uit om glitch te voorkomen
-        self.plot_widget.setUpdatesEnabled(False)
-        self.plot_widget.resize(width, height)
-        QApplication.processEvents()
+        # Bereid het canvas voor.
+        pixmap = QPixmap(QSize(EXPORT_WIDTH, EXPORT_HEIGHT))
+        pixmap.fill(QColor(0, 0, 0)) # Zwarte achtergrond
 
-        # Offscreen afbeelding maken
-        image = QImage(width, height, QImage.Format_RGBA8888)
-        image.fill(0)
+        painter = QPainter(pixmap)
+        view_box = self.plot_widget.getViewBox()
+        plot_item = self.plot_widget.getPlotItem() 
 
-        painter = QPainter(image)
-        self.plot_widget.render(painter)
-        painter.end()
+        
+        # Bewaar de huidige live-view om deze later te herstellen.
+        original_x_range, original_y_range = view_box.viewRange()
 
-        # Zet grootte en updates terug
-        self.plot_widget.resize(original_size)
-        self.plot_widget.setUpdatesEnabled(True)
-        QApplication.processEvents()
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            scene = plot_item.scene()
 
-        # QImage → NumPy array
-        ptr = image.bits()
-        ptr.setsize(image.byteCount())
-        frame = np.array(ptr).reshape((height, width, 4))
+            # --- BELANGRIJKSTE WIJZIGING ---
+            # We negeren de lijnen voor de kadrering en stellen de "camera" (viewBox)
+            # direct in op de exacte afmetingen van de afbeelding.
+            # Dit garandeert dat de afbeelding het volledige scherm vult.
+            view_box.setRange(xRange=(0, img_width), yRange=(0, img_height), padding=0)
+            
+            # Forceer de UI om deze nieuwe view te verwerken vóór het renderen.
+            QApplication.processEvents()
+            
+            # Render de scène met de nieuwe, perfect passende view.
+            scene.render(painter, QRectF(pixmap.rect()), view_box.viewRect())
 
-        return frame
+            # --- WATERMARK LOGICA (AANGEPAST) ---
+            watermark_path = os.path.join(script_dir, "images", "pulseline1.png")
+            if os.path.exists(watermark_path):
+                watermark_image = QImage(watermark_path)
+                if not watermark_image.isNull():
+                    # Schaal het watermark naar 5% van de videohoogte.
+                    target_height = int(EXPORT_HEIGHT * 0.05)
+                    scaled_watermark = watermark_image.scaledToHeight(target_height, Qt.SmoothTransformation)
 
+                    # Plaats het geschaalde watermark linksonder met een marge.
+                    margin = 20
+                    wm_x = margin
+                    wm_y = EXPORT_HEIGHT - scaled_watermark.height() - margin
+                    painter.drawImage(wm_x, wm_y, scaled_watermark)
 
+        finally:
+            # Herstel de live-view naar de oorspronkelijke staat.
+            painter.end()
+            view_box.setRange(xRange=original_x_range, yRange=original_y_range, padding=0)
+            
+        # Converteer het resultaat naar een formaat dat we kunnen opslaan.
+        qimage_result = pixmap.toImage()
+        if qimage_result.isNull(): return None
 
+        buffer = qimage_result.constBits()
+        buffer.setsize(qimage_result.sizeInBytes())
+        arr = np.frombuffer(buffer, dtype=np.uint8).reshape((qimage_result.height(), qimage_result.width(), 4))
+        
+        arr_rgba = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
+        pil_image = Image.fromarray(arr_rgba, 'RGBA')
+        
+        return pil_image
 
-
-
+    
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
