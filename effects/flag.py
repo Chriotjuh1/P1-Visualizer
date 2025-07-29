@@ -2,67 +2,62 @@
 
 from .base_effect import Effects
 from .schemas import EffectModel, FlagParams
-from .converts import rgb_to_rgbw
+from utils import rgb_to_rgbw
 
 class FlagEffect(Effects):
     """
-    Een effect dat een bewegende vlag simuleert met meerdere kleurensegmenten.
+    Een effect dat een vlag als één blok van links naar rechts over de strip laat lopen,
+    vergelijkbaar met het 'Running Line' effect.
     """
     def __init__(self, model: EffectModel):
         super().__init__(model)
-        # Type checking for parameters
         if not isinstance(self.params, FlagParams):
             raise ValueError("Parameters for FlagEffect must be of type FlagParams")
 
-        self.current_frame = 0.0 # Initialiseer current_frame als float voor nauwkeurigere animatie
+        # current_frame wordt al geïnitialiseerd in de base class
 
-    def get_next_frame(self):
+    def get_next_frame(self, delta_time: float = 0.0):
         """
         Retourneert het volgende frame voor het Flag effect.
         """
-        frame = [[0, 0, 0, 0]] * self.num_leds # Begin met een leeg (zwart) frame
-
         brightness_factor = self.params.brightness / 100.0
         
-        # Achtergrondkleur
-        bg_r = self.params.background_color.red
-        bg_g = self.params.background_color.green
-        bg_b = self.params.background_color.blue
+        bg_r, bg_g, bg_b = self.params.background_color.red, self.params.background_color.green, self.params.background_color.blue
         bg_rgbw = rgb_to_rgbw(bg_r, bg_g, bg_b)
 
-        # Update de frame teller
-        # De snelheid van de vlagbeweging kan worden aangepast door de factor 0.5 te wijzigen
-        # of door een snelheidsparameter toe te voegen aan FlagParams.
-        self.current_frame += (self.fps / 33.0) * 0.5 # Pas de snelheid aan op basis van FPS
-
-        # Bereken de totale breedte van het vlagpatroon
         total_pattern_width = sum(self.params.width)
+        if total_pattern_width == 0:
+             return [bg_rgbw] * self.num_leds
 
-        # Vul het frame met de achtergrondkleur
-        frame = [bg_rgbw] * self.num_leds
+        # --- NIEUWE SNELHEIDSBEREKENING ---
+        # De vlag moet de hele strip + zijn eigen lengte afleggen om volledig uit beeld te verdwijnen.
+        total_distance = self.num_leds + total_pattern_width
+        speed_multiplier = 40.0
+        self.current_frame = (self.current_frame + self.speed * delta_time * speed_multiplier) % total_distance
 
-        # Teken de vlagsegmenten
-        current_segment_offset = 0
-        for idx, color_input in enumerate(self.params.color):
-            flag_width = self.params.width[idx]
-
+        # Maak een "kleurenkaart" van het vlagpatroon voor efficiëntie.
+        pattern_map = []
+        for i, width in enumerate(self.params.width):
+            color_input = self.params.color[i]
             scaled_red = int(color_input.red * brightness_factor)
             scaled_green = int(color_input.green * brightness_factor) 
             scaled_blue = int(color_input.blue * brightness_factor)
-            rgbw = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
-            
-            for led_offset in range(flag_width):
-                # Bereken de positie in het totale vlagpatroon
-                pos_in_pattern = (current_segment_offset + led_offset)
+            rgbw_color = rgb_to_rgbw(scaled_red, scaled_green, scaled_blue)
+            pattern_map.extend([rgbw_color] * width)
 
-                # Bereken de uiteindelijke LED-index op de strip, rekening houdend met de animatie
-                # en de herhaling van het patroon.
-                # De vlag beweegt over de strip, dus we gebruiken self.current_frame voor de offset.
-                led_index = int((pos_in_pattern + self.current_frame) % self.num_leds)
-                
-                if 0 <= led_index < self.num_leds:
-                    frame[led_index] = rgbw
-            
-            current_segment_offset += flag_width
+        # Begin met een volledig lege (achtergrondkleur) strip.
+        frame = [bg_rgbw] * self.num_leds
+
+        # --- NIEUWE TEKENLOGICA ---
+        # Bepaal de startpositie van de vlag. 
+        # Door de breedte van het patroon eraf te halen, start de vlag buiten het beeld.
+        start_pos = int(self.current_frame) - total_pattern_width
+
+        # Teken alleen de pixels van de vlag die daadwerkelijk op de strip zichtbaar zijn.
+        for i in range(total_pattern_width):
+            led_index = start_pos + i
+            # Controleer of de pixel binnen de strip valt (van 0 tot num_leds).
+            if 0 <= led_index < self.num_leds:
+                frame[led_index] = pattern_map[i]
         
         return frame

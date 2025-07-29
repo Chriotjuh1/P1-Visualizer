@@ -12,7 +12,7 @@ class Color(BaseModel):
 class EffectModel(BaseModel):
     params: Any # Dit zal worden vervangen door specifieke Params modellen
     frame_skip: int
-    fps: int
+    speed: int # Toegevoegd: snelheidsparameter om de schuifregelaarwaarde (1-5) door te geven
     num_leds: int
 
 # Specifieke Params modellen voor elk effect

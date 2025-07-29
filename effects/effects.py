@@ -1,35 +1,40 @@
-# P1-Visualizer/effects/effects.py
+from .schemas import EffectModel
 
-# Importeer de schema's direct, ervan uitgaande dat schemas.py in dezelfde map staat
-from .schemas import EffectModel, StaticParams, BreathingParams, KnightRiderParams, MeteorParams, MulticolorParams, RunningLineParams, ChristmasSnowParams, FlagParams
-
-# Importeer de basisklasse Effects vanuit base_effect.py
-# CORRECTION: Typefout 'Effectscle' gewijzigd naar 'Effects'
-from .base_effect import Effects 
-
-# Importeer alle specifieke effectklassen direct, ervan uitgaande dat ze in dezelfde map staan
-from .static import StaticEffect
-from .breathing import BreathingEffect
-from .meteor import MeteorEffect
-from .multicolor import MulticolorEffect
-from .running_line import RunningLineEffect
-from .christmas_snow import ChristmasSnowEffect
-from .flag import FlagEffect
-from .knight_rider import KnightRiderEffect # Importeer KnightRiderEffect vanuit zijn eigen bestand
-
-
-def get_effect_class(effect_name: str):
+class Effects:
     """
-    Retourneert de juiste Effect-klasse op basis van de effectnaam.
+    Basisklasse voor alle LED-effecten, aangepast voor delta-time.
     """
-    effect_map = {
-        "Static": StaticEffect,
-        "Pulseline": BreathingEffect,
-        "Knight Rider": KnightRiderEffect,
-        "Meteor": MeteorEffect,
-        "Multicolor": MulticolorEffect,
-        "Running Line": RunningLineEffect,
-        "Christmas Snow": ChristmasSnowEffect,
-        "Flag": FlagEffect,
-    }
-    return effect_map.get(effect_name)
+    def __init__(self, model: EffectModel):
+        self.model = model
+        self.params = model.params
+        # We gebruiken nu model.speed in plaats van de oude fps/frame_skip
+        self.speed = model.speed
+        self._num_leds = model.num_leds
+        self._on_num_leds_change()
+
+    @property
+    def num_leds(self):
+        return self._num_leds
+
+    @num_leds.setter
+    def num_leds(self, value):
+        if self._num_leds != value:
+            self._num_leds = value
+            self._on_num_leds_change()
+
+    def _on_num_leds_change(self):
+        """Wordt aangeroepen wanneer het aantal LEDs verandert."""
+        pass
+
+    def get_next_frame(self, delta_time: float):
+        """
+        Berekent en retourneert de volgende frame van de animatie.
+        Deze methode MOET door elke subklasse (elk effect) worden geïmplementeerd.
+
+        :param delta_time: De tijd in seconden sinds de laatste frame.
+        :return: Een lijst van [R, G, B, W] lijsten voor elke LED.
+        """
+        raise NotImplementedError("get_next_frame(delta_time) moet geïmplementeerd worden door subclasses")
+
+# De alias is niet strikt nodig, maar kan behouden blijven voor compatibiliteit
+BaseEffect = Effects

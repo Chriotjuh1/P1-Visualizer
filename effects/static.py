@@ -1,28 +1,21 @@
-from effects.base_effect import BaseEffect
-from effects.schemas import EffectModel, StaticParams
+from .base_effect import Effects
+from .schemas import StaticParams
+from utils import rgb_to_rgbw
 
-class StaticEffect(BaseEffect):
-    """
-    Een statisch effect dat alle LEDs een vaste kleur en helderheid geeft.
-    """
-    def __init__(self, model: EffectModel):
+class StaticEffect(Effects):
+    def __init__(self, model):
         super().__init__(model)
-        # Zorg ervoor dat Pydantic het juiste type params herkent voor type hinting.
         self.params: StaticParams = self.params
 
-    def get_next_frame(self):
+    def get_next_frame(self, delta_time: float):
         """
-        Genereert het volgende frame voor het statische effect.
-        Leest de kleur en helderheid direct uit self.params voor elke frame.
+        Retourneert een statische kleur. delta_time wordt genegeerd.
         """
-        # Haal de parameters op bij elke aanroep voor real-time updates.
-        color = (self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue)
         brightness = self.params.brightness / 100.0
-
-        # Bereken de uiteindelijke kleur.
-        r = int(color[0] * brightness)
-        g = int(color[1] * brightness)
-        b = int(color[2] * brightness)
-
-        # Geef voor elke LED dezelfde kleur terug.
-        return [(r, g, b) for _ in range(self.num_leds)]
+        r, g, b = self.params.color[0].red, self.params.color[0].green, self.params.color[0].blue
+        
+        r_out = int(r * brightness)
+        g_out = int(g * brightness)
+        b_out = int(b * brightness)
+        
+        return [rgb_to_rgbw(r_out, g_out, b_out)] * self.num_leds

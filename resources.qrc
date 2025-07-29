@@ -1,0 +1,6 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file>icons/undo.png</file>
+    <file>icons/redo.png</file>
+</qresource>
+</RCC>

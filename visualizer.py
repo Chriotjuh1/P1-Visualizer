@@ -9,6 +9,7 @@ import cv2
 import imageio
 import uuid # For generating unique IDs
 import re # For regex in stylesheet parsing
+import resources_rc # Importeer de gecompileerde resources
 
 # Add the script's directory to sys.path so modules can be found
 # This is crucial if the script is not run from the project's root folder.
@@ -185,6 +186,23 @@ class LEDVisualizer(QMainWindow):
 
         control_layout = QVBoxLayout()
         main_layout.addLayout(control_layout, 20)
+
+        # --- AANGEPAST: Undo/Redo knoppen met gebundelde iconen ---
+        undo_redo_layout = QHBoxLayout()
+        
+        # Gebruik het icoon uit het resource-bestand
+        self.undo_button = QPushButton(QIcon(":/icons/undo.png"), "") 
+        self.undo_button.clicked.connect(self.undo_action)
+        undo_redo_layout.addWidget(self.undo_button)
+
+        # Gebruik het icoon uit het resource-bestand
+        self.redo_button = QPushButton(QIcon(":/icons/redo.png"), "")
+        self.redo_button.clicked.connect(self.redo_action)
+        undo_redo_layout.addWidget(self.redo_button)
+        
+        undo_redo_layout.addStretch() 
+        control_layout.addLayout(undo_redo_layout)
+        # --- Einde aanpassing ---
         
         control_layout.addWidget(QPushButton("Afbeelding Laden", clicked=self.load_image))
 
@@ -216,12 +234,12 @@ class LEDVisualizer(QMainWindow):
         extra_options_group = QGroupBox("Extra Opties")
         extra_options_layout = QVBoxLayout(extra_options_group)
 
-        extra_options_layout.addWidget(QLabel("Helderheid (globaal of per lijn):"))
+        extra_options_layout.addWidget(QLabel("Helderheid:"))
         self.brightness_slider = QSlider(Qt.Horizontal, minimum=0, maximum=100, value=int(self.default_brightness * 100), singleStep=1)
         self.brightness_slider.valueChanged.connect(self.set_current_action_brightness)
         extra_options_layout.addWidget(self.brightness_slider)
         
-        extra_options_layout.addWidget(QLabel("Snelheid (globaal of per lijn):"))
+        extra_options_layout.addWidget(QLabel("Snelheid:"))
         # Adjusted: Maximum value of speed slider set to 5
         self.speed_slider = QSlider(Qt.Horizontal, minimum=1, maximum=5, value=self.default_speed)
         self.speed_slider.valueChanged.connect(self.set_current_action_speed)
@@ -232,14 +250,19 @@ class LEDVisualizer(QMainWindow):
         self.darkness_slider.valueChanged.connect(self.update_background_darkness)
         extra_options_layout.addWidget(self.darkness_slider)
 
+        extra_options_layout.addWidget(QLabel("Samenvoeg-afstand:"))
+        self.merge_slider = QSlider(Qt.Horizontal, minimum=1, maximum=100, value=25)
+        extra_options_layout.addWidget(self.merge_slider)
+        
+
         self.effect_params_container = QWidget()
         self.effect_params_layout = QVBoxLayout(self.effect_params_container)
         extra_options_layout.addWidget(self.effect_params_container)
         self.current_effect_ui_elements = {}
 
         extra_options_layout.addWidget(QPushButton("Lijnen Samenvoegen", clicked=self.merge_lines))
-        extra_options_layout.addWidget(QPushButton("Ongedaan Maken", clicked=self.undo_action))
-        extra_options_layout.addWidget(QPushButton("Opnieuw Uitvoeren", clicked=self.redo_action))
+        # extra_options_layout.addWidget(QPushButton("Ongedaan Maken", clicked=self.undo_action))
+        # extra_options_layout.addWidget(QPushButton("Opnieuw Uitvoeren", clicked=self.redo_action))
         extra_options_layout.addWidget(QPushButton("Sla Afbeelding Op", clicked=self.save_image))
         extra_options_layout.addWidget(QPushButton("Exporteer MP4", clicked=self.export_video))
         extra_options_layout.addWidget(QPushButton("Roteer Links", clicked=lambda: self.rotate_image(-90)))
@@ -704,57 +727,162 @@ class LEDVisualizer(QMainWindow):
         self.show_status_message(f"Background darkness set to {value}%")
 
     def merge_lines(self):
+        """
+        Voegt alle getekende lijnen samen tot één enkele, ononderbroken lijn,
+        zelfs bij complexe splitsingen.
+        """
         if len(self.actions) < 2:
-            self.show_status_message("At least two lines needed to merge.")
+            self.show_status_message("Minstens twee lijnen nodig om samen te voegen.")
             return
 
         self.push_undo_state()
-        merge_threshold = 25
-        merged_in_pass = True
-        
-        while merged_in_pass:
-            merged_in_pass = False
-            i = 0
-            while i < len(self.actions):
-                j = i + 1
-                while j < len(self.actions):
-                    line1, line2 = self.actions[i], self.actions[j]
-                    p1_start, p1_end = line1['points'][0], line1['points'][-1]
-                    p2_start, p2_end = line2['points'][0], line2['points'][-1]
-                    merged = False
-                    
-                    if distance(p1_end, p2_start) < merge_threshold:
-                        line1['points'].extend(line2['points']); merged = True
-                    elif distance(p1_end, p2_end) < merge_threshold:
-                        line1['points'].extend(reversed(line2['points'])); merged = True
-                    elif distance(p1_start, p2_end) < merge_threshold:
-                        line1['points'] = list(reversed(line1['points'])) + line2['points']; merged = True
-                    elif distance(p1_start, p2_start) < merge_threshold:
-                        line1['points'] = list(reversed(line1['points'])) + list(reversed(line2['points'])); merged = True
-                    
-                    if merged:
-                        removed_action_id = self.actions[j]['id']
-                        for item_dict in [self.line_plot_items, self.glow_plot_items, self.line_data_items, self.point_plot_items]:
-                            if removed_action_id in item_dict:
-                                self.plot_widget.removeItem(item_dict[removed_action_id])
-                                del item_dict[removed_action_id]
-                        if removed_action_id in self.effect_instances:
-                            del self.effect_instances[removed_action_id]
 
-                        self.actions.pop(j)
-                        self.actions[i]['recalculate_resample'] = True 
-                        self.actions[i]['mode'] = "Effect"
-                        merged_in_pass = True
-                        i = -1
-                        break
-                    else:
-                        j += 1
-                if i == -1: break
-                i += 1
+        MAX_REASONABLE_DISTANCE = 150
+        work_list = copy.deepcopy(self.actions)
         
+        # --- STAP 1: GREEDY CHAINING (verbind duidelijke buren) ---
+        merged_actions = []
+        while work_list:
+            current_chain = work_list.pop(0)
+            while True:
+                chain_start = current_chain['points'][0]
+                chain_end = current_chain['points'][-1]
+                best_match = None
+                min_dist = MAX_REASONABLE_DISTANCE
+
+                for i, other_line in enumerate(work_list):
+                    other_start = other_line['points'][0]
+                    other_end = other_line['points'][-1]
+                    connections = [
+                        (distance(chain_end, other_start), 'end_to_start', i),
+                        (distance(chain_end, other_end), 'end_to_end', i),
+                        (distance(chain_start, other_end), 'start_to_end', i),
+                        (distance(chain_start, other_start), 'start_to_start', i),
+                    ]
+                    for dist, how, other_index in connections:
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_match = {'how': how, 'index': other_index}
+                
+                if best_match:
+                    matched_line = work_list.pop(best_match['index'])
+                    pts_to_add = matched_line['points']
+                    if best_match['how'] == 'end_to_start':
+                        current_chain['points'].extend(pts_to_add)
+                    elif best_match['how'] == 'end_to_end':
+                        current_chain['points'].extend(reversed(pts_to_add))
+                    elif best_match['how'] == 'start_to_end':
+                        current_chain['points'] = pts_to_add + current_chain['points']
+                    elif best_match['how'] == 'start_to_start':
+                        current_chain['points'] = list(reversed(pts_to_add)) + current_chain['points']
+                else:
+                    break
+            merged_actions.append(current_chain)
+
+        # --- STAP 2: FORCED CHAINING (verbind de overgebleven ketens tot 1 lijn) ---
+        while len(merged_actions) > 1:
+            global_min_dist = float('inf')
+            best_connection = None
+
+            for i in range(len(merged_actions)):
+                for j in range(i + 1, len(merged_actions)):
+                    chain1, chain2 = merged_actions[i]['points'], merged_actions[j]['points']
+                    connections = [
+                        (distance(chain1[-1], chain2[0]), 'end1_start2', i, j),
+                        (distance(chain1[-1], chain2[-1]), 'end1_end2', i, j),
+                        (distance(chain1[0], chain2[0]), 'start1_start2', i, j),
+                        (distance(chain1[0], chain2[-1]), 'start1_end2', i, j),
+                    ]
+                    for dist, how, idx1, idx2 in connections:
+                        if dist < global_min_dist:
+                            global_min_dist = dist
+                            best_connection = {'how': how, 'idx1': idx1, 'idx2': idx2}
+            
+            if best_connection:
+                idx1, idx2 = best_connection['idx1'], best_connection['idx2']
+                how = best_connection['how']
+                if idx1 > idx2:
+                    idx1, idx2 = idx2, idx1
+                    parts = how.split('_')
+                    how = f"{parts[0][:5]}{'2' if parts[0][-1] == '1' else '1'}_{parts[1][:5]}{'2' if parts[1][-1] == '1' else '1'}"
+                
+                chain1_action, chain2_action = merged_actions[idx1], merged_actions[idx2]
+                if how == 'end1_start2': chain1_action['points'].extend(chain2_action['points'])
+                elif how == 'end1_end2': chain1_action['points'].extend(reversed(chain2_action['points']))
+                elif how == 'start1_end2': chain1_action['points'] = chain2_action['points'] + chain1_action['points']
+                elif how == 'start1_start2': chain1_action['points'] = list(reversed(chain2_action['points'])) + chain1_action['points']
+                merged_actions.pop(idx2)
+            else:
+                break # Geen verbindingen meer mogelijk
+
+        # --- Afronding ---
+        if len(self.actions) != len(merged_actions) or any(len(a['points']) != len(b['points']) for a, b in zip(self.actions, merged_actions)):
+            for item_dict in [self.line_plot_items, self.glow_plot_items, self.line_data_items, self.point_plot_items]:
+                for item in list(item_dict.values()): self.plot_widget.removeItem(item)
+                item_dict.clear()
+            self.effect_instances.clear()
+            self.actions = merged_actions
+            self.selected_action_index = -1
+            self.show_status_message(f"Alle lijnen succesvol samengevoegd tot 1 lijn.")
+        else:
+            self.show_status_message("Geen lijnen gevonden om samen te voegen.")
+            self.undo_stack.pop()
+            
         self.update_drawing()
+        
+        if len(self.actions) < 2:
+            self.show_status_message("Minstens twee lijnen nodig om samen te voegen.")
+            return
+
         self.push_undo_state()
-        self.show_status_message("Lines merged.")
+        merge_threshold = self.merge_slider.value()
+        exact_merge_tolerance = 1.0
+
+        def dedup(points):
+            result = []
+            for pt in points:
+                if not result or distance(pt, result[-1]) > exact_merge_tolerance:
+                    result.append(pt)
+            return result
+
+        merged_any = True
+        while merged_any:
+            merged_any = False
+            for i in range(len(self.actions)):
+                for j in range(i + 1, len(self.actions)):
+                    l1, l2 = self.actions[i], self.actions[j]
+                    pts1, pts2 = l1['points'], l2['points']
+
+                    # Check alle combinaties, met logging
+                    pairs = [
+                        (pts1[-1], pts2[0], 'end1→start2', lambda: pts1 + ([pts2[0]] if distance(pts1[-1], pts2[0]) > exact_merge_tolerance else []) + pts2[1:]),
+                        (pts1[-1], pts2[-1], 'end1→end2', lambda: pts1 + ([pts2[-1]] if distance(pts1[-1], pts2[-1]) > exact_merge_tolerance else []) + list(reversed(pts2[:-1]))),
+                        (pts1[0], pts2[-1], 'start1←end2', lambda: pts2[:-1] + ([pts1[0]] if distance(pts1[0], pts2[-1]) > exact_merge_tolerance else []) + pts1),
+                        (pts1[0], pts2[0], 'start1←start2', lambda: list(reversed(pts2[1:])) + ([pts1[0]] if distance(pts1[0], pts2[0]) > exact_merge_tolerance else []) + pts1)
+                    ]
+                    merged = False
+                    for p1, p2, desc, build in pairs:
+                        d = distance(p1, p2)
+                        print(f"Check {desc}: {d:.2f} px (threshold {merge_threshold})")
+                        if d < merge_threshold:
+                            print(f"MERGE: {desc} bij afstand {d:.2f} px")
+                            l1['points'] = dedup(build())
+                            l1['recalculate_resample'] = True
+                            l1['reset_effect_state'] = True
+                            self.actions.pop(j)
+                            merged_any = True
+                            merged = True
+                            break
+                    if merged:
+                        break
+                if merged_any:
+                    break
+
+        self.show_status_message("Lijnen samengevoegd als ze aan elkaar lagen.")
+        self.update_drawing()
+
+
+
 
 
     def push_undo_state(self):
@@ -1106,15 +1234,49 @@ class LEDVisualizer(QMainWindow):
         if self.drawing:
             if self.draw_mode == "Vrij Tekenen" and self.current_action:
                 if len(self.current_action["points"]) > 1:
-                    # REMOVE THIS LINE: self.current_action['mode'] = self.draw_mode
-                    self.actions.append(self.current_action)
+                    new_line = self.current_action
+                    merged = False
+                    
+                    # Definitieve, correcte auto-merge logica
+                    if self.actions:
+                        last_line = self.actions[-1]
+                        if len(last_line['points']) >= 1:
+                            snap_threshold = 25
+                            p_new_start, p_new_end = new_line['points'][0], new_line['points'][-1]
+                            p_last_start, p_last_end = last_line['points'][0], last_line['points'][-1]
+
+                            # Case 1: Nieuwe lijn start waar de vorige eindigde
+                            if distance(p_new_start, p_last_end) < snap_threshold:
+                                last_line['points'].extend(new_line['points'][1:]) # [1:] voorkomt dubbel punt
+                                merged = True
+                            # Case 2: Nieuwe lijn eindigt waar de vorige eindigde
+                            elif distance(p_new_end, p_last_end) < snap_threshold:
+                                last_line['points'].extend(list(reversed(new_line['points']))[1:])
+                                merged = True
+                            # Case 3: Nieuwe lijn start waar de vorige begon
+                            elif distance(p_new_start, p_last_start) < snap_threshold:
+                                last_line['points'] = list(reversed(new_line['points']))[:-1] + last_line['points']
+                                merged = True
+                            # Case 4: Nieuwe lijn eindigt waar de vorige begon
+                            elif distance(p_new_end, p_last_start) < snap_threshold:
+                                last_line['points'] = new_line['points'][:-1] + last_line['points']
+                                merged = True
+                            
+                            if merged:
+                                last_line['recalculate_resample'] = True
+                                last_line['reset_effect_state'] = True
+                                self.show_status_message("Lijn automatisch verlengd.")
+
+                    if not merged:
+                        self.actions.append(new_line)
+                        self.show_status_message("Nieuwe lijn gestart.")
+                    
                     self.push_undo_state()
-                    self.show_status_message("Free drawing completed.")
                 else:
-                    self.show_status_message("Line too short to save.")
+                    self.show_status_message("Lijn te kort om op te slaan.")
             elif self.draw_mode == "Lijn Bewerken" and self.selected_action_index != -1:
                 self.push_undo_state()
-                self.show_status_message("Line editing completed.")
+                self.show_status_message("Lijn bewerken voltooid.")
 
         self.drawing = False
         self.drag_start_pos = None
@@ -1323,7 +1485,7 @@ class LEDVisualizer(QMainWindow):
         
         elif selected_effect_name == "Meteor":
             default_meteor_width = params_to_display.get('meteor_width', 10)
-            slider_width = self._add_slider("Meteor Width", "meteor_width", 1, 50, default_meteor_width)
+            slider_width = self._add_slider("Meteor Width", "meteor_width", 1, 100, default_meteor_width)
             slider_width.blockSignals(True); slider_width.setValue(default_meteor_width); slider_width.blockSignals(False)
 
             default_spark_intensity = params_to_display.get('spark_intensity', 50)
@@ -1518,9 +1680,10 @@ class LEDVisualizer(QMainWindow):
                         image = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
 
                     # Load the watermark
-                    logo = cv2.imread("images/pulseline1.png", cv2.IMREAD_UNCHANGED)
+                    logo_path = os.path.join(script_dir, "images", "pulseline1.png")
+                    logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)                    
                     if logo is not None and logo.shape[2] == 4:
-                        target_height = int(image.shape[0] * 0.1)
+                        target_height = int(image.shape[0] * 0.05)
                         scale_factor = target_height / logo.shape[0]
                         logo_resized = cv2.resize(
                             logo,
@@ -1562,113 +1725,102 @@ class LEDVisualizer(QMainWindow):
             self.show_status_message("Geen afbeelding geladen om te exporteren.")
             return
 
-        # Gebruik de resolutie van de afbeelding voor de export.
-        img_height, img_width, _ = self.original_image.shape
-        export_width = img_width
-        export_height = img_height
+        # Vraag eenmalig waar het bestand opgeslagen moet worden.
+        output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
+        if not output_path:
+            self.show_status_message("Export geannuleerd.")
+            return
+        if not output_path.lower().endswith('.mp4'):
+            output_path += '.mp4'
 
-        # Video-instellingen.
+        # --- Setup ---
+        img_height, img_width, _ = self.original_image.shape
         fps = 30
         duration_seconds = 10
         total_frames = fps * duration_seconds
         delta_time_per_frame = 1.0 / fps
 
-        output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
-        if not output_path:
-            return
-        if not output_path.lower().endswith('.mp4'):
-            output_path += '.mp4'
-
-        # Voortgangsvenster.
+        # --- Voortgangsvenster ---
         progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
         progress.setWindowTitle("Exporteren")
         progress.setWindowModality(Qt.WindowModal)
-        progress.setAutoClose(False)
-        progress.setAutoReset(False)
-        progress.setMinimumWidth(400)
         progress.setMinimumDuration(0)
-        
+        progress.setAutoReset(False)
+        progress.setAutoClose(False)
+
         # Pauzeer de live-timer.
         self.timer.stop()
-        
+
+        # Bewaar de originele staat van de widget.
+        original_size = self.plot_widget.size()
+        view_box = self.plot_widget.getViewBox()
+        original_range = view_box.viewRange()
+
+        was_cancelled = False
         try:
             progress.show()
             QApplication.processEvents()
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
+            video_writer = cv2.VideoWriter(output_path, fourcc, fps, (img_width, img_height))
 
             if not video_writer.isOpened():
                 self.show_status_message("Fout: Kon videobestand niet openen.")
+                # Belangrijk: return hier binnen de try, zodat de finally wel wordt uitgevoerd.
                 return
 
-            # Reset effecten voor een schone start.
+            # Dwing de widget naar de juiste staat voor renderen.
+            self.plot_widget.resize(img_width, img_height)
+            view_box.setRange(xRange=(0, img_width), yRange=(0, img_height), padding=0)
+
             for action in self.actions:
                 action['reset_effect_state'] = True
             self.update_drawing(delta_time=0.0)
 
-            # Bewaar de originele staat van de widget.
-            original_size = self.plot_widget.size()
-            view_box = self.plot_widget.getViewBox()
-            original_range = view_box.viewRange()
-
-            # Dwing de widget naar de juiste staat voor renderen.
-            self.plot_widget.resize(export_width, export_height)
-            view_box.setRange(xRange=(0, export_width), yRange=(0, export_height), padding=0)
-            
+            # --- Render Loop ---
             for frame_idx in range(total_frames):
                 if progress.wasCanceled():
+                    was_cancelled = True
                     break
-
-                # 1. Update de animatie.
+                
+                progress.setValue(frame_idx)
                 self.update_drawing(delta_time=delta_time_per_frame, force_next_frame=True)
-                QApplication.processEvents() # Geef tijd om de update te verwerken.
+                QApplication.processEvents()
 
-                # 2. Render het frame (directe methode).
-                image = QImage(export_width, export_height, QImage.Format_RGBA8888)
+                image = QImage(img_width, img_height, QImage.Format_RGBA8888)
                 image.fill(0)
                 painter = QPainter(image)
                 self.plot_widget.render(painter)
                 painter.end()
 
-                # Converteer QImage naar NumPy array.
                 ptr = image.bits()
                 ptr.setsize(image.byteCount())
-                frame_rgba = np.array(ptr).reshape((export_height, export_width, 4))
+                frame_rgba = np.array(ptr).reshape((img_height, img_width, 4))
                 frame_bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
                 
-                # 3. Voeg het watermerk toe met OpenCV.
                 logo_path = os.path.join(script_dir, "images", "pulseline1.png")
                 if os.path.exists(logo_path):
                     logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
                     if logo is not None:
-                        target_height = int(export_height * 0.05) # 5% van de hoogte.
-                        scale_factor = target_height / logo.shape[0]
-                        new_width = int(logo.shape[1] * scale_factor)
-                        logo_resized = cv2.resize(logo, (new_width, target_height), interpolation=cv2.INTER_AREA)
-
+                        target_height = int(img_height * 0.05)
+                        scale = target_height / logo.shape[0]
+                        logo_resized = cv2.resize(logo, (int(logo.shape[1] * scale), target_height))
+                        
                         margin = 20
                         x_offset = margin
-                        y_offset = export_height - logo_resized.shape[0] - margin
+                        y_offset = img_height - target_height - margin
 
                         overlay = logo_resized[..., :3]
                         mask = logo_resized[..., 3:] / 255.0
-                        
-                        roi = frame_bgr[y_offset:y_offset + target_height, x_offset:x_offset + new_width]
+                        roi = frame_bgr[y_offset:y_offset+target_height, x_offset:x_offset+logo_resized.shape[1]]
                         blended = (overlay * mask + roi * (1 - mask)).astype(np.uint8)
-                        frame_bgr[y_offset:y_offset + target_height, x_offset:x_offset + new_width] = blended
+                        frame_bgr[y_offset:y_offset+target_height, x_offset:x_offset+logo_resized.shape[1]] = blended
 
-                # Schrijf het frame naar de video.
                 video_writer.write(frame_bgr)
-                progress.setValue(frame_idx + 1)
 
+            # --- Afronding ---
+            progress.setValue(total_frames)
             video_writer.release()
-            
-            if progress.wasCanceled():
-                if os.path.exists(output_path): os.remove(output_path)
-                self.show_status_message("Export geannuleerd.")
-            else:
-                self.show_status_message(f"Video succesvol geëxporteerd naar: {output_path}")
 
         finally:
             # Herstel de widget en de live-timer altijd.
@@ -1676,88 +1828,13 @@ class LEDVisualizer(QMainWindow):
             self.plot_widget.resize(original_size)
             self.plot_widget.getViewBox().setRange(xRange=original_range[0], yRange=original_range[1])
             self.timer.start(10)
-            import os
-            import cv2
-            import numpy as np
 
-            if not self.image_item and not self.actions:
-                self.show_status_message("Geen afbeelding of lijnen geladen om te exporteren.")
-                QMessageBox.warning(self, "Export Fout", "Geen afbeelding of lijnen geladen om te exporteren.")
-                return
-
-            if self.original_image is not None:
-                height, width, _ = self.original_image.shape
-                export_width = width
-                export_height = height
+            # Geef de eindstatus weer nadat alles is hersteld.
+            if was_cancelled:
+                if os.path.exists(output_path): os.remove(output_path)
+                self.show_status_message("Export geannuleerd.")
             else:
-                export_width = 1920
-                export_height = 1080
-
-            fps = 30
-            duration_seconds = 10
-            total_frames = fps * duration_seconds
-            delta_time_per_frame = 1.0 / fps 
-
-            output_path, _ = QFileDialog.getSaveFileName(self, "Export Video", "", "MP4 Files (*.mp4)")
-            if not output_path:
-                return
-            if not output_path.lower().endswith('.mp4'):
-                output_path += '.mp4'
-
-            progress = QProgressDialog("Video wordt geëxporteerd...", "Annuleren", 0, total_frames, self)
-            progress.setWindowTitle("Exporteren")
-            progress.setWindowModality(Qt.WindowModal)
-            progress.setAutoClose(False)
-            progress.setAutoReset(False)
-            progress.setMinimumWidth(400)
-            progress.setMinimumDuration(0)
-            
-            # TOEGEVOEGD: Pauzeer de live timer
-            self.timer.stop()
-            
-            try:
-                progress.show()
-                QApplication.processEvents()
-
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                video_writer = cv2.VideoWriter(output_path, fourcc, fps, (export_width, export_height))
-
-                if not video_writer.isOpened():
-                    # ... (error handling blijft hetzelfde) ...
-                    return
-
-                for action in self.actions:
-                    action['reset_effect_state'] = True
-                self.update_drawing(delta_time=0.0)
-
-                for frame_idx in range(total_frames):
-                    if progress.wasCanceled():
-                        break
-
-                    self.update_drawing(delta_time=delta_time_per_frame, force_next_frame=True)
-                    pil_image = self._capture_and_crop_frame()
-
-                    if pil_image:
-                        frame_rgba = np.array(pil_image)
-                        frame_bgr = cv2.cvtColor(frame_rgba, cv2.COLOR_RGBA2BGR)
-                        video_writer.write(frame_bgr)
-
-                    progress.setValue(frame_idx + 1)
-                    QApplication.processEvents()
-
-                video_writer.release()
-                
-                if progress.wasCanceled():
-                    if os.path.exists(output_path):
-                        os.remove(output_path)
-                    self.show_status_message("Export geannuleerd.")
-                else:
-                    self.show_status_message(f"Video succesvol geëxporteerd naar: {output_path}")
-
-            finally:
-                # TOEGEVOEGD: Start de live timer altijd opnieuw, wat er ook gebeurt.
-                progress.close()
-                self.timer.start(10)
+                self.show_status_message(f"Video succesvol geëxporteerd naar: {output_path}")
 
             
         
